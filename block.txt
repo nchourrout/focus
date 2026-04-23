@@ -1,0 +1,21 @@
+# One site per line. www. is added automatically, list the bare domain.
+
+youtube.com
+facebook.com
+instagram.com
+web.whatsapp.com
+twitter.com
+reddit.com
+linkedin.com
+makerworld.com
+thangs.com
+printables.com
+amazon.com
+amazon.com.be
+amazon.com.de
+temu.com
+lemonde.fr
+cnn.com
+edition.cnn.com
+chess.com
+packhacker.com
