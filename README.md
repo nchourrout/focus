@@ -17,13 +17,14 @@ git clone git@github.com:nchourrout/focus.git ~/dev/focus
 `block`, `unblock`, and `toggle` need sudo (they write `/etc/hosts`). The pomodoro daemon also needs to block/unblock in the background, so a `NOPASSWD` sudoers drop-in is required for it to work from Hammerspoon:
 
 ```bash
+FOCUS=$HOME/dev/focus/focus.py
 sudo tee /etc/sudoers.d/focus >/dev/null <<EOF
-$(whoami) ALL=(root) NOPASSWD: /usr/bin/python3 $HOME/dev/focus/focus.py *
+$(whoami) ALL=(root) NOPASSWD: /usr/bin/python3 $FOCUS block, /usr/bin/python3 $FOCUS unblock, /usr/bin/python3 $FOCUS toggle, /usr/bin/python3 $FOCUS toggle --json
 EOF
 sudo chmod 0440 /etc/sudoers.d/focus
 ```
 
-Without it, background `sudo -n` calls fail silently and the pomodoro runs without blocking.
+This whitelists the exact subcommands needed (no wildcard). Without it, background `sudo -n` calls fail silently and the pomodoro runs without blocking.
 
 ## Usage
 

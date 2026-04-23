@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -32,6 +33,46 @@ MUSIC_PRESETS = {
     "ambient":   "spotify:playlist:37i9dQZF1DX3Ogo9pFvBkY",   # Ambient Relaxation
 }
 
+# Matches bare-ish hostnames. Rejects newlines, spaces, and shell-meta.
+_HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9.\-]*$")
+
+_SELF = [sys.executable, str(SCRIPT_DIR / "focus.py")]
+
+
+def _run_self(*args: str, sudo: bool = False) -> int:
+    """Invoke this script again as a subprocess, silently."""
+    cmd = (["sudo", "-n", *_SELF] if sudo else [*_SELF]) + list(args)
+    return subprocess.run(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode
+
+
+def _pid_alive(pid: int) -> bool:
+    """True if `pid` exists and we can signal it (may be any living process)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Alive, just not ours.
+    return True
+
+
+def _escape_applescript(s: str) -> str:
+    """Escape backslashes and double-quotes for embedding in an AppleScript string literal."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def positive_int(s: str) -> int:
+    """argparse type: accept positive integers only."""
+    v = int(s)
+    if v <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return v
+
 
 # --- website blocking ---------------------------------------------------------
 
@@ -42,12 +83,16 @@ def require_root() -> None:
 
 def read_block_list(path: Path) -> list[str]:
     sites: set[str] = set()
-    for raw in path.read_text().splitlines():
+    for lineno, raw in enumerate(path.read_text().splitlines(), start=1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        # Normalize: strip leading www. so both variants are always emitted below.
-        sites.add(line.removeprefix("www."))
+        # Strip leading www. so both variants are always emitted below.
+        site = line.removeprefix("www.")
+        # Reject anything that could smuggle newlines or extra tokens into /etc/hosts.
+        if not _HOSTNAME_RE.match(site):
+            sys.exit(f"focus: {path}:{lineno}: invalid hostname: {line!r}")
+        sites.add(site)
     return sorted(sites)
 
 
@@ -160,7 +205,8 @@ def osascript(script: str) -> int:
 def spotify_play(uri: str) -> None:
     # Open Spotify if needed, then play the URI.
     osascript('tell application "Spotify" to activate')
-    rc = osascript(f'tell application "Spotify" to play track "{uri}"')
+    safe_uri = _escape_applescript(uri)
+    rc = osascript(f'tell application "Spotify" to play track "{safe_uri}"')
     if rc != 0:
         sys.exit(f"focus: Spotify failed to play {uri}")
 
@@ -183,7 +229,14 @@ def kill_local_playback() -> None:
 def start_local_playback(path: Path, loop: bool) -> None:
     kill_local_playback()
     if loop:
-        cmd = ["sh", "-c", f'while true; do afplay "{path}"; done']
+        # Drive the loop from Python so the path never touches a shell.
+        inner = (
+            "import subprocess, sys\n"
+            "while True:\n"
+            "    if subprocess.run(['afplay', sys.argv[1]]).returncode != 0:\n"
+            "        break\n"
+        )
+        cmd = [sys.executable, "-c", inner, str(path)]
     else:
         cmd = ["afplay", str(path)]
     proc = subprocess.Popen(
@@ -245,15 +298,10 @@ def cmd_music(args: argparse.Namespace) -> int:
 # --- pomodoro -----------------------------------------------------------------
 
 def notify(title: str, text: str, sound: str = "Glass") -> None:
-    script = (
-        f'display notification "{text}" with title "{title}" sound name "{sound}"'
-    )
-    subprocess.run(
-        ["osascript", "-e", script],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
+    t = _escape_applescript(text)
+    h = _escape_applescript(title)
+    s = _escape_applescript(sound)
+    osascript(f'display notification "{t}" with title "{h}" sound name "{s}"')
 
 
 def read_pomodoro_state() -> dict | None:
@@ -274,42 +322,45 @@ def pomodoro_phase(state: dict, now: float | None = None) -> tuple[str, float]:
     return "done", 0.0
 
 
-def run_unblock_quiet() -> None:
-    # Uses the sudoers NOPASSWD drop-in; silent if not configured.
-    subprocess.run(
-        ["sudo", "-n", sys.executable, str(SCRIPT_DIR / "focus.py"), "unblock"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-
-
-def run_block_quiet() -> bool:
-    rc = subprocess.run(
-        ["sudo", "-n", sys.executable, str(SCRIPT_DIR / "focus.py"), "block"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    ).returncode
-    return rc == 0
+def _clear_pomodoro_state() -> None:
+    """Nuke any leftover pomodoro state: unblock, stop music, delete state file."""
+    _run_self("unblock", sudo=True)
+    _run_self("music", "--stop")
+    POMODORO_STATE_FILE.unlink(missing_ok=True)
 
 
 def cmd_pomodoro_start(args: argparse.Namespace) -> int:
-    if read_pomodoro_state() is not None:
-        sys.exit("focus: a pomodoro is already running. Stop it first.")
+    existing = read_pomodoro_state()
+    if existing is not None:
+        if _pid_alive(existing.get("pid", -1)):
+            sys.exit("focus: a pomodoro is already running. Stop it first.")
+        # Stale state file (daemon died / reboot). Recover and proceed.
+        print("focus: clearing stale pomodoro state from previous session")
+        _clear_pomodoro_state()
 
     now = time.time()
     work_end = now + args.work * 60
     break_end = work_end + args.break_ * 60
+    music = args.music or os.environ.get("FOCUS_SPOTIFY_URI", "")
 
-    # Launch the background daemon.
+    # Write state BEFORE forking so `pomodoro stop` has something to read
+    # even if invoked in the tiny window right after start. PID is patched in.
+    state = {
+        "goal": args.goal,
+        "pid": 0,
+        "started_at": now,
+        "work_end": work_end,
+        "break_end": break_end,
+        "music": music,
+    }
+    POMODORO_STATE_FILE.write_text(json.dumps(state))
+
     cmd = [
-        sys.executable, str(SCRIPT_DIR / "focus.py"), "_pomodoro-run",
+        *_SELF, "_pomodoro-run",
         "--goal", args.goal,
         "--work-end", str(work_end),
         "--break-end", str(break_end),
     ]
-    music = args.music or os.environ.get("FOCUS_SPOTIFY_URI", "")
     if music:
         cmd += ["--music", music]
 
@@ -320,15 +371,8 @@ def cmd_pomodoro_start(args: argparse.Namespace) -> int:
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-
-    POMODORO_STATE_FILE.write_text(json.dumps({
-        "goal": args.goal,
-        "pid": proc.pid,
-        "started_at": now,
-        "work_end": work_end,
-        "break_end": break_end,
-        "music": music,
-    }))
+    state["pid"] = proc.pid
+    POMODORO_STATE_FILE.write_text(json.dumps(state))
 
     print(
         f"focus: pomodoro started — {args.work}min work, "
@@ -342,15 +386,9 @@ def cmd_pomodoro_run(args: argparse.Namespace) -> int:
     # Clean termination on SIGTERM so our finally block runs.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
-        blocked = run_block_quiet()
+        blocked = _run_self("block", sudo=True) == 0
         if args.music:
-            # Play via a new subprocess so we don't block.
-            subprocess.run(
-                [sys.executable, str(SCRIPT_DIR / "focus.py"), "music", args.music],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
+            _run_self("music", args.music)
         notify(
             "Pomodoro started",
             args.goal + ("" if blocked else "\n(couldn't block websites)"),
@@ -362,15 +400,7 @@ def cmd_pomodoro_run(args: argparse.Namespace) -> int:
         time.sleep(max(0.0, args.break_end - time.time()))
         notify("Break over", "Ready for another session?")
     finally:
-        run_unblock_quiet()
-        if args.music:
-            subprocess.run(
-                [sys.executable, str(SCRIPT_DIR / "focus.py"), "music", "--stop"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-        POMODORO_STATE_FILE.unlink(missing_ok=True)
+        _clear_pomodoro_state()
     return 0
 
 
@@ -379,24 +409,20 @@ def cmd_pomodoro_stop(args: argparse.Namespace) -> int:
     if state is None:
         print("focus: no pomodoro running")
         return 0
-    try:
-        os.kill(state["pid"], signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        pass
-    # Give the daemon a moment to clean up. If it didn't, do it ourselves.
-    for _ in range(10):
-        time.sleep(0.1)
-        if not POMODORO_STATE_FILE.exists():
-            break
+    pid = state.get("pid", 0)
+    if pid and _pid_alive(pid):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        # Give the daemon a moment to clean up after itself.
+        for _ in range(10):
+            time.sleep(0.1)
+            if not POMODORO_STATE_FILE.exists():
+                break
+    # If the daemon didn't (or couldn't) clean up, do it ourselves.
     if POMODORO_STATE_FILE.exists():
-        run_unblock_quiet()
-        subprocess.run(
-            [sys.executable, str(SCRIPT_DIR / "focus.py"), "music", "--stop"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        POMODORO_STATE_FILE.unlink(missing_ok=True)
+        _clear_pomodoro_state()
     print("focus: pomodoro stopped")
     return 0
 
@@ -465,9 +491,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     po_start = po_sub.add_parser("start", help="start a pomodoro in the background")
     po_start.add_argument("goal", help="what you're working on")
-    po_start.add_argument("--work", type=int, default=25, metavar="MINS",
+    po_start.add_argument("--work", type=positive_int, default=25, metavar="MINS",
                           help="work minutes (default 25)")
-    po_start.add_argument("--break", dest="break_", type=int, default=5,
+    po_start.add_argument("--break", dest="break_", type=positive_int, default=5,
                           metavar="MINS", help="break minutes (default 5)")
     po_start.add_argument("--music", help="music preset or spotify: URI (default FOCUS_SPOTIFY_URI)")
     po_start.set_defaults(func=cmd_pomodoro_start)
