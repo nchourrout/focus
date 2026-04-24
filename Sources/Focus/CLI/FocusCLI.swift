@@ -1,7 +1,6 @@
 import ArgumentParser
 import Foundation
 
-@main
 struct FocusCLI: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "focus",

@@ -1,26 +1,29 @@
 #!/usr/bin/env bash
-# Build a release binary and symlink it to /usr/local/bin/focus.
-#
-# Phase 1 only ships a CLI binary. Later phases will assemble a real
-# Focus.app bundle and install that; this script stays as a fallback.
+# Build Focus.app, copy it to /Applications, and symlink the binary
+# inside it to /usr/local/bin/focus so the CLI works from the shell.
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-echo "==> swift build -c release"
-swift build -c release
+./Scripts/build-app.sh
 
-BIN="$(swift build -c release --show-bin-path)/focus"
-TARGET="/usr/local/bin/focus"
+APP_SRC="./Focus.app"
+APP_DEST="/Applications/Focus.app"
+BIN_INSIDE="$APP_DEST/Contents/MacOS/focus"
+CLI_LINK="/usr/local/bin/focus"
 
-if [[ ! -x "$BIN" ]]; then
-  echo "error: expected $BIN not found after build" >&2
-  exit 1
-fi
+echo "==> installing $APP_DEST"
+sudo rm -rf "$APP_DEST"
+sudo cp -R "$APP_SRC" "$APP_DEST"
 
-echo "==> symlinking $TARGET -> $BIN"
-sudo ln -sf "$BIN" "$TARGET"
+echo "==> symlinking $CLI_LINK -> $BIN_INSIDE"
+sudo mkdir -p "$(dirname "$CLI_LINK")"
+sudo ln -sf "$BIN_INSIDE" "$CLI_LINK"
 
-echo "Installed. Test with: focus status"
-echo "Next: Scripts/install-sudoers.sh  (needs FOCUS_BIN=$TARGET by default)"
+echo
+echo "Installed. Test:"
+echo "  focus status         # CLI"
+echo "  open /Applications/Focus.app   # menu bar app"
+echo
+echo "Next: ./Scripts/install-sudoers.sh  (needed for Hyper+B / pomodoro auto-block)"

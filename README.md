@@ -13,8 +13,9 @@ A macOS CLI — soon menu bar app — to get in the zone.
 
 ## Status
 
-**Phase 1 — CLI parity (current).** The Swift binary matches the Python tool's
-CLI surface 1:1. Menu bar app, global hotkeys, and settings come in later phases.
+**Phase 2 — menu bar app (current).** Single dual-mode binary: run with no
+args it launches as a menu bar app; run with any subcommand it behaves as the
+CLI. Global hotkeys and a Settings window come in Phase 3.
 
 ## Build & install
 
@@ -24,9 +25,28 @@ Xcode itself is only needed to run `swift test`).
 ```bash
 git clone git@github.com:nchourrout/focus.git ~/dev/focus
 cd ~/dev/focus
-./Scripts/install.sh            # builds release, symlinks /usr/local/bin/focus
+./Scripts/install.sh            # builds Focus.app, installs to /Applications,
+                                # symlinks /usr/local/bin/focus → the inner binary
 ./Scripts/install-sudoers.sh    # writes /etc/sudoers.d/focus after visudo -c
+open /Applications/Focus.app    # launches the menu bar app
 ```
+
+Set `Focus.app` to open at login via System Settings → General → Login Items
+(or via `SMAppService` in a later phase).
+
+## Menu bar
+
+Click the icon for a dropdown:
+
+- **Pomodoro icon (🍅 timer / ☕ break)** with live countdown when a session is running
+- **Start pomodoro…** opens a goal prompt; **Stop pomodoro** while running
+- **Block / Unblock websites** toggle (uses the sudoers drop-in)
+- **Music** submenu: play any preset, or stop
+- **Quit Focus**
+
+All actions shell out to the same binary in CLI mode, so the state file
+(`~/.focus-pomodoro.json`) stays the single source of truth. The menu bar
+polls it once a second.
 
 ## CLI
 
