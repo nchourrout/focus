@@ -1,4 +1,9 @@
-__pycache__/
-*.pyc
+.build/
+.swiftpm/
 .DS_Store
-.venv/
+*.xcodeproj/
+Package.resolved
+
+# Build outputs
+Focus.app/
+build/

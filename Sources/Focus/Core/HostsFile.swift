@@ -1,0 +1,67 @@
+import Foundation
+
+/// Read/write of `/etc/hosts` with a marker-delimited block section.
+///
+/// Wire-compatible with the previous Python tool so external consumers
+/// (Hammerspoon, scripts) work unchanged.
+enum HostsFile {
+    static let markerStart = "# === FOCUS BLOCK START ==="
+    static let markerEnd = "# === FOCUS BLOCK END ==="
+    static let redirectIP = "127.0.0.1"
+
+    static func read() throws -> String {
+        try String(contentsOf: Paths.hosts, encoding: .utf8)
+    }
+
+    static func write(_ content: String) throws {
+        try content.write(to: Paths.hosts, atomically: true, encoding: .utf8)
+    }
+
+    static func isActive() -> Bool {
+        (try? read())?.contains(markerStart) ?? false
+    }
+
+    /// Remove the marker-delimited section from a hosts file body, returning the remainder
+    /// with a single trailing newline.
+    static func strip(_ content: String) -> String {
+        var out: [String] = []
+        var skipping = false
+        for raw in content.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(raw)
+            if line.contains(markerStart) { skipping = true; continue }
+            if line.contains(markerEnd) { skipping = false; continue }
+            if !skipping { out.append(line) }
+        }
+        return out.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+    }
+
+    static func backupOnce() throws {
+        guard !FileManager.default.fileExists(atPath: Paths.hostsBackup.path) else { return }
+        let content = try read()
+        try content.write(to: Paths.hostsBackup, atomically: true, encoding: .utf8)
+    }
+
+    /// Install block entries. Each site gets both the bare and www. variants.
+    /// Requires root. Flushes DNS on success. Returns the number of sites blocked.
+    @discardableResult
+    static func apply(sites: [String]) throws -> Int {
+        guard !sites.isEmpty else { return 0 }
+        try backupOnce()
+        let cleaned = strip(try read())
+        var entries = [markerStart]
+        for site in sites {
+            entries.append("\(redirectIP) \(site)")
+            entries.append("\(redirectIP) www.\(site)")
+        }
+        entries.append(markerEnd)
+        try write(cleaned + entries.joined(separator: "\n") + "\n")
+        DNS.flush()
+        return sites.count
+    }
+
+    /// Remove the block section. Requires root.
+    static func unblock() throws {
+        try write(strip(try read()))
+        DNS.flush()
+    }
+}
