@@ -24,9 +24,10 @@ git clone git@github.com:nchourrout/focus.git ~/dev/focus
 cd ~/dev/focus
 ./Scripts/install.sh            # builds Focus.app, installs to /Applications,
                                 # symlinks /usr/local/bin/focus → the inner binary
-./Scripts/install-sudoers.sh    # writes /etc/sudoers.d/focus after visudo -c
 open /Applications/Focus.app    # launches the menu bar app
 ```
+
+The first time you toggle the block, Focus pops a native admin password dialog and installs `/etc/sudoers.d/focus`. After that, all toggles and pomodoro auto-blocks run silently. You can also manage the permission from **Settings → General → Grant permission…** at any time.
 
 Open **Settings…** from the menu (⌘,) to bind global hotkeys and toggle launch-at-login.
 
@@ -67,15 +68,16 @@ focus pomodoro status                             # add --json for machine-reada
 focus pomodoro stop
 ```
 
-## Sudoers
+## Sudoers (system permission)
 
-`block`, `unblock`, and `toggle` need root because they write `/etc/hosts`. The pomodoro daemon runs them non-interactively via `sudo -n`, so `NOPASSWD` is required:
+`block`, `unblock`, and `toggle` need root because they write `/etc/hosts`. The pomodoro daemon runs them non-interactively via `sudo -n`, so a `NOPASSWD` entry is required in `/etc/sudoers.d/focus`.
 
-```bash
-./Scripts/install-sudoers.sh
-```
+Focus installs it itself — no separate shell script:
 
-Installs `/etc/sudoers.d/focus` with four whitelisted subcommands (no wildcard), validated with `visudo -cf` before writing.
+- On the first Hyper+B / Block toggle, the app detects the missing drop-in and prompts with the **native macOS admin password dialog** (same UX as Xcode, Homebrew-cask, etc.). Enter your password once; the rule is written after `visudo -cf` validation.
+- You can re-run the install from **Settings → General → Grant permission…** at any time (e.g. if the binary path changes).
+
+The generated rule whitelists exactly four subcommands (`block`, `unblock`, `toggle`, `toggle --json`) against the Focus.app binary path — no wildcards.
 
 ## State files
 

@@ -15,18 +15,62 @@ struct SettingsContent: View {
 }
 
 private struct GeneralTab: View {
-    /// Trigger to force SwiftUI re-evaluation after SMAppService state changes.
+    /// Bumped after SMAppService or sudoers-drop-in state changes, so the
+    /// read-only computed properties re-evaluate.
     @State private var refreshTick = 0
+    @State private var installError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Toggle(isOn: launchAtLoginBinding) {
                 Text("Launch at login")
             }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: permissionInstalled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(permissionInstalled ? .green : .orange)
+                    Text(permissionInstalled ? "System permission: granted" : "System permission: not granted")
+                }
+                Text("Focus needs a one-time admin password to install a `/etc/sudoers.d` entry allowing it to edit /etc/hosts without prompting on every toggle.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(permissionInstalled ? "Reinstall permission…" : "Grant permission…") {
+                    installPermission()
+                }
+            }
+
+            if let installError = installError {
+                Text(installError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Spacer()
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var permissionInstalled: Bool {
+        _ = refreshTick
+        return SudoersInstaller.isInstalled
+    }
+
+    private func installPermission() {
+        installError = nil
+        do {
+            try SudoersInstaller.install()
+            refreshTick += 1
+        } catch SudoersInstaller.InstallError.userCancelled {
+            // Silent: the user chose to cancel, nothing to surface.
+        } catch {
+            installError = error.localizedDescription
+        }
     }
 
     /// Reads `SMAppService.mainApp.status` on every access so the toggle always

@@ -98,17 +98,25 @@ enum Actions {
     private static func showSudoersMissingAlert() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "Focus can't change /etc/hosts"
-        alert.informativeText = """
-        sudo rejected the command. Run the sudoers installer from the Focus \
-        source checkout:
-
-          Scripts/install-sudoers.sh
-
-        Then try again.
-        """
+        alert.messageText = "Focus needs permission to edit /etc/hosts"
+        alert.informativeText = "Grant permission once and Focus will be able to block and unblock sites without any further prompts."
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        alert.addButton(withTitle: "Grant Permission…")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            try SudoersInstaller.install()
+            let ok = NSAlert()
+            ok.messageText = "Permission granted"
+            ok.informativeText = "Try the action again."
+            ok.runModal()
+        } catch SudoersInstaller.InstallError.userCancelled {
+            // User dismissed the password dialog; nothing to report.
+            return
+        } catch {
+            let fail = NSAlert(error: error)
+            fail.runModal()
+        }
     }
 }

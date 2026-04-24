@@ -26,8 +26,9 @@ sudo mkdir -p "$(dirname "$CLI_LINK")"
 sudo ln -sf "$BIN_INSIDE" "$CLI_LINK"
 
 echo
-echo "Installed. Test:"
-echo "  focus status         # CLI"
-echo "  open /Applications/Focus.app   # menu bar app"
+echo "Installed. Next:"
+echo "  open /Applications/Focus.app   # launch the menu bar app"
 echo
-echo "Next: ./Scripts/install-sudoers.sh  (needed for Hyper+B / pomodoro auto-block)"
+echo "The first time you toggle the block, Focus will prompt for your"
+echo "admin password to install /etc/sudoers.d/focus. After that, all"
+echo "Hyper+B toggles and pomodoro auto-blocks run without prompting."
