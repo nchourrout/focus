@@ -1,9 +1,13 @@
 import Foundation
 import AppKit
+import os
+
+private let log = Logger(subsystem: "com.nchourrout.focus", category: "actions")
 
 /// Thin dispatch layer: every menu action spawns the focus CLI (same binary,
 /// different argv) and returns immediately. All state changes flow back
 /// through the state file, which AppState picks up on its next tick.
+@MainActor
 enum Actions {
     // MARK: Pomodoro
 
@@ -57,17 +61,26 @@ enum Actions {
 
     // MARK: Private
 
-    /// Fire-and-forget invocation of the focus binary. Fails silently on launch error
-    /// rather than popping an alert for every missed click.
+    /// Fire-and-forget invocation of the focus binary. Launch errors are routed to
+    /// Unified Logging instead of popping an alert for every missed click — check
+    /// Console.app filtered on subsystem `com.nchourrout.focus` when debugging.
     private static func spawn(_ args: [String]) {
-        _ = try? Subprocess.launchSilent(Paths.selfExecutable, args)
+        do {
+            _ = try Subprocess.launchSilent(Paths.selfExecutable, args)
+        } catch {
+            log.error("spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Same as `spawn` but routes through `sudo -n`. Requires the sudoers drop-in.
     private static func spawnSudo(_ args: [String]) {
-        _ = try? Subprocess.launchSilent(
-            URL(fileURLWithPath: "/usr/bin/sudo"),
-            ["-n", Paths.selfExecutable.path] + args
-        )
+        do {
+            _ = try Subprocess.launchSilent(
+                URL(fileURLWithPath: "/usr/bin/sudo"),
+                ["-n", Paths.selfExecutable.path] + args
+            )
+        } catch {
+            log.error("sudo spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

@@ -27,7 +27,7 @@ struct StatusLabel: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        if state.pomodoro != nil, state.phase != .done {
+        if state.isRunning {
             Label {
                 Text(formatCountdown(state.timeLeft))
             } icon: {

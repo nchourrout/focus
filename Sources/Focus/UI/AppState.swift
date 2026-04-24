@@ -15,12 +15,19 @@ final class AppState: ObservableObject {
 
     init() {
         refresh()
+        // Timer fires on the main run loop since init runs on @MainActor;
+        // no need to hop actors again inside the callback.
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            MainActor.assumeIsolated { self?.refresh() }
         }
     }
 
     deinit { timer?.invalidate() }
+
+    /// True while a work or break phase is in progress.
+    var isRunning: Bool {
+        pomodoro != nil && phase != .done
+    }
 
     func refresh() {
         let newBlock = HostsFile.isActive()

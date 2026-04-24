@@ -8,9 +8,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-swift build -c release
-
+# `--show-bin-path` resolves the path without compiling, so we can look it up
+# first and only invoke `swift build` once.
 BIN_DIR="$(swift build -c release --show-bin-path)"
+swift build -c release
 BIN="$BIN_DIR/focus"
 
 if [[ ! -x "$BIN" ]]; then

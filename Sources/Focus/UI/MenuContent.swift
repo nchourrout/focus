@@ -5,7 +5,7 @@ struct MenuContent: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        if state.pomodoro != nil, state.phase != .done {
+        if state.isRunning {
             pomodoroSection
         } else {
             Button("Start pomodoro…") { Actions.promptAndStartPomodoro() }

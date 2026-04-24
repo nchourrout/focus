@@ -1,0 +1,21 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Swift / Xcode versions
+        run: |
+          swift --version
+          xcodebuild -version
+      - name: Build
+        run: swift build -c release
+      - name: Run unit tests
+        run: swift test
