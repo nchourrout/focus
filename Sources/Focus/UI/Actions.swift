@@ -105,18 +105,16 @@ enum Actions {
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        do {
-            try SudoersInstaller.install()
-            let ok = NSAlert()
-            ok.messageText = "Permission granted"
-            ok.informativeText = "Try the action again."
-            ok.runModal()
-        } catch SudoersInstaller.InstallError.userCancelled {
-            // User dismissed the password dialog; nothing to report.
-            return
-        } catch {
-            let fail = NSAlert(error: error)
-            fail.runModal()
-        }
+        SudoersInstaller.installWithUI(
+            onSuccess: {
+                let ok = NSAlert()
+                ok.messageText = "Permission granted"
+                ok.informativeText = "Try the action again."
+                ok.runModal()
+            },
+            onError: { error in
+                NSAlert(error: error).runModal()
+            }
+        )
     }
 }

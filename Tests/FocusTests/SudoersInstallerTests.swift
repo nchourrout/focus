@@ -3,28 +3,25 @@ import Foundation
 @testable import Focus
 
 @Suite struct SudoersInstallerTests {
-    /// Pure-logic check: the rendered rule must use the real binary path and the
-    /// current user, with the expected four whitelisted subcommands.
-    @Test func ruleShapeIsCorrect() throws {
-        // Use reflection-free access by invoking install() indirectly isn't feasible;
-        // instead we encode the contract: what install() sends to visudo must start
-        // with "<user> ALL=(root) NOPASSWD:" and mention each subcommand exactly once.
-        // We recreate the same rendering here as a sanity check on the shape.
-        let user = NSUserName()
+    @Test func ruleContainsEachSubcommandAgainstRunningBinary() throws {
+        let rule = try SudoersInstaller.renderRule()
         let bin = Paths.selfExecutable.path
-        let expected = """
-        \(user) ALL=(root) NOPASSWD: \\
-            \(bin) block, \\
-            \(bin) unblock, \\
-            \(bin) toggle, \\
-            \(bin) toggle --json
-        """
-        // Sanity: non-empty user and an absolute bin path.
-        #expect(!user.isEmpty)
-        #expect(bin.hasPrefix("/"))
-        // Each subcommand appears in the expected form.
         for sub in ["block", "unblock", "toggle", "toggle --json"] {
-            #expect(expected.contains("\(bin) \(sub)"), "rule should whitelist `\(sub)` against the running binary")
+            #expect(rule.contains("\(bin) \(sub)"), "rule should whitelist `\(sub)` against \(bin)")
         }
+        #expect(rule.hasPrefix(NSUserName()), "rule's first token must be the username at column 0")
+    }
+
+    /// Catches indentation regressions in the multiline string literal: the first
+    /// line must start at column 0, and each continuation must be valid sudoers.
+    @Test func generatedRulePassesVisudo() throws {
+        let rule = try SudoersInstaller.renderRule()
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("focus-sudoers-test-\(UUID().uuidString)")
+        try rule.write(to: tmp, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let result = Subprocess.runCapturingStderr("/usr/sbin/visudo", ["-cf", tmp.path])
+        #expect(result.status == 0, "visudo rejected the generated rule:\n\(result.stderr)")
     }
 }

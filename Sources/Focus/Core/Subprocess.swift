@@ -40,4 +40,25 @@ enum Subprocess {
         try p.run()
         return p
     }
+
+    /// Run a subprocess synchronously, return (exit code, captured stderr as UTF-8).
+    /// Used when we need to inspect stderr to distinguish error classes (e.g. osascript
+    /// "User canceled (-128)" vs a real failure).
+    static func runCapturingStderr(_ executable: String, _ arguments: [String] = []) -> (status: Int32, stderr: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: executable)
+        p.arguments = arguments
+        let err = Pipe()
+        p.standardInput = FileHandle.nullDevice
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = err
+        do {
+            try p.run()
+            p.waitUntilExit()
+            let data = err.fileHandleForReading.readDataToEndOfFile()
+            return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        } catch {
+            return (-1, "\(error)")
+        }
+    }
 }

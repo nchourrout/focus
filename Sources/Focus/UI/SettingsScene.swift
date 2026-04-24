@@ -63,14 +63,10 @@ private struct GeneralTab: View {
 
     private func installPermission() {
         installError = nil
-        do {
-            try SudoersInstaller.install()
-            refreshTick += 1
-        } catch SudoersInstaller.InstallError.userCancelled {
-            // Silent: the user chose to cancel, nothing to surface.
-        } catch {
-            installError = error.localizedDescription
-        }
+        SudoersInstaller.installWithUI(
+            onSuccess: { refreshTick += 1 },
+            onError: { error in installError = error.localizedDescription }
+        )
     }
 
     /// Reads `SMAppService.mainApp.status` on every access so the toggle always
