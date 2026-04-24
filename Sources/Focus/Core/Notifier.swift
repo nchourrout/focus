@@ -5,9 +5,12 @@ import Foundation
 /// path via UNUserNotificationCenter for richer notifications (action buttons etc.).
 enum Notifier {
     static func post(title: String, body: String, sound: String = "Glass") {
-        let t = escapeAppleScript(title)
-        let b = escapeAppleScript(body)
-        let s = escapeAppleScript(sound)
+        // `body` can be user-supplied (pomodoro goal). Use the sanitizer so a
+        // control character doesn't corrupt the AppleScript literal — matches
+        // Spotify.play's treatment of URIs.
+        guard let t = sanitizeAppleScriptString(title),
+              let b = sanitizeAppleScriptString(body),
+              let s = sanitizeAppleScriptString(sound) else { return }
         _ = Subprocess.osascript(
             "display notification \"\(b)\" with title \"\(t)\" sound name \"\(s)\""
         )

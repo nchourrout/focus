@@ -73,22 +73,22 @@ enum Actions {
     }
 
     /// Same as `spawn` but routes through `sudo -n`. Requires the sudoers drop-in.
-    /// Also waits briefly and checks sudo's exit code — if the drop-in is missing,
-    /// we surface an alert so the user understands why the menu action did nothing.
+    /// Uses `terminationHandler` (event-driven, no thread parking) to detect sudo
+    /// failures and surface an alert, so the user understands why the menu action
+    /// appeared to do nothing.
     private static func spawnSudo(_ args: [String]) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        p.arguments = ["-n", Paths.selfExecutable.path] + args
+        p.standardInput = FileHandle.nullDevice
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        p.terminationHandler = { proc in
+            guard proc.terminationStatus != 0 else { return }
+            Task { @MainActor in showSudoersMissingAlert() }
+        }
         do {
-            let p = try Subprocess.launchSilent(
-                URL(fileURLWithPath: "/usr/bin/sudo"),
-                ["-n", Paths.selfExecutable.path] + args
-            )
-            // sudo -n finishes fast whether it succeeds or fails. Checking exit
-            // status lets us distinguish "ran" from "no sudoers entry".
-            Task.detached {
-                p.waitUntilExit()
-                if p.terminationStatus != 0 {
-                    await MainActor.run { showSudoersMissingAlert() }
-                }
-            }
+            try p.run()
         } catch {
             log.error("sudo spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             showSudoersMissingAlert()
@@ -100,9 +100,10 @@ enum Actions {
         let alert = NSAlert()
         alert.messageText = "Focus can't change /etc/hosts"
         alert.informativeText = """
-        sudo rejected the command. Install the sudoers drop-in:
+        sudo rejected the command. Run the sudoers installer from the Focus \
+        source checkout:
 
-          ~/dev/focus/Scripts/install-sudoers.sh
+          Scripts/install-sudoers.sh
 
         Then try again.
         """

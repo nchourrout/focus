@@ -87,7 +87,9 @@ enum PomodoroDaemon {
             return
         }
         // Only signal if the PID is still ours; skip if the PID has been recycled.
-        if isOurProcess(pid: state.pid, expectedStart: state.startedAt) {
+        // The `pid > 0` check is a defensive belt: `kill(0, SIGTERM)` would signal
+        // every process in our process group.
+        if state.pid > 0, isOurProcess(pid: state.pid, expectedStart: state.startedAt) {
             _ = kill(state.pid, SIGTERM)
             for _ in 0..<10 {
                 usleep(100_000)

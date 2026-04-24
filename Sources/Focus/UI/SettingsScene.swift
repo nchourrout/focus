@@ -27,7 +27,6 @@ private struct GeneralTab: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear { refreshTick += 1 }
     }
 
     /// Reads `SMAppService.mainApp.status` on every access so the toggle always

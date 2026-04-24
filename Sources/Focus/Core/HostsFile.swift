@@ -29,9 +29,8 @@ enum HostsFile {
     static func strip(_ content: String) -> String {
         var out: [String] = []
         var skipping = false
-        // Split on any newline variant so CRLF input doesn't leave \r baked into entries.
-        for raw in content.components(separatedBy: .newlines) {
-            let line = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\r"))
+        // .newlines splits on \n, \r, and \r\n uniformly — no lingering \r on entries.
+        for line in content.components(separatedBy: .newlines) {
             if line.contains(markerStart) { skipping = true; continue }
             if line.contains(markerEnd) { skipping = false; continue }
             if !skipping { out.append(line) }
