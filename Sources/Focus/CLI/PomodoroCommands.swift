@@ -64,7 +64,7 @@ extension Pomodoro {
         @Flag(name: .customLong("json"), help: "Machine-readable output.")
         var json: Bool = false
 
-        func run() {
+        func run() throws {
             guard let state = PomodoroState.current else {
                 if json {
                     print("{\"running\": false}")
@@ -75,19 +75,32 @@ extension Pomodoro {
             }
             let (phase, timeLeft) = state.phase()
             if json {
-                let escapedGoal = escapeJSONString(state.goal)
-                print(
-                    "{\"running\": true, \"goal\": \"\(escapedGoal)\", "
-                    + "\"phase\": \"\(phase.rawValue)\", "
-                    + "\"time_left\": \(Int(timeLeft.rounded())), "
-                    + "\"work_end\": \(state.workEnd), "
-                    + "\"break_end\": \(state.breakEnd)}"
+                let payload = StatusPayload(
+                    running: true,
+                    goal: state.goal,
+                    phase: phase.rawValue,
+                    time_left: Int(timeLeft.rounded()),
+                    work_end: state.workEnd,
+                    break_end: state.breakEnd
                 )
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = .sortedKeys
+                let data = try encoder.encode(payload)
+                print(String(decoding: data, as: UTF8.self))
             } else {
                 let mins = Int(timeLeft) / 60
                 let secs = Int(timeLeft) % 60
                 print(String(format: "focus: %@ — %d:%02d left — %@", phase.rawValue, mins, secs, state.goal))
             }
+        }
+
+        private struct StatusPayload: Encodable {
+            let running: Bool
+            let goal: String
+            let phase: String
+            let time_left: Int
+            let work_end: TimeInterval
+            let break_end: TimeInterval
         }
     }
 }
@@ -107,23 +120,4 @@ struct PomodoroRun: ParsableCommand {
     func run() {
         PomodoroDaemon.runDaemon(goal: goal, workEnd: workEnd, breakEnd: breakEnd, music: music)
     }
-}
-
-/// Minimal JSON string escape for the handful of fields we emit.
-func escapeJSONString(_ s: String) -> String {
-    var out = ""
-    for scalar in s.unicodeScalars {
-        switch scalar {
-        case "\\": out += "\\\\"
-        case "\"": out += "\\\""
-        case "\n": out += "\\n"
-        case "\r": out += "\\r"
-        case "\t": out += "\\t"
-        case let c where c.value < 0x20:
-            out += String(format: "\\u%04x", c.value)
-        default:
-            out.unicodeScalars.append(scalar)
-        }
-    }
-    return out
 }

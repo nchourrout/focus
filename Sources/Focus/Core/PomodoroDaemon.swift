@@ -17,12 +17,13 @@ enum PomodoroDaemon {
         let now = Date().timeIntervalSince1970
         let workEnd = now + Double(workMinutes * 60)
         let breakEnd = workEnd + Double(breakMinutes * 60)
-        let musicValue = (music?.isEmpty == false ? music : ProcessInfo.processInfo.environment["FOCUS_SPOTIFY_URI"]) ?? ""
+        // Single source of truth for preset / env-var resolution. Fails fast on unknown preset.
+        let musicURI = try MusicPresets.resolve(target: music, explicitURI: nil)
 
         // Write state before forking so `pomodoro stop` always sees the session.
         var state = PomodoroState(
             goal: goal, pid: 0, startedAt: now,
-            workEnd: workEnd, breakEnd: breakEnd, music: musicValue
+            workEnd: workEnd, breakEnd: breakEnd, music: musicURI
         )
         try state.save()
 
@@ -34,8 +35,8 @@ enum PomodoroDaemon {
             "--work-end", String(workEnd),
             "--break-end", String(breakEnd),
         ]
-        if !musicValue.isEmpty {
-            args.append(contentsOf: ["--music", musicValue])
+        if let music = musicURI {
+            args.append(contentsOf: ["--music", music])
         }
         p.arguments = args
         p.standardInput = FileHandle.nullDevice
@@ -61,6 +62,11 @@ enum PomodoroDaemon {
         _ = Darwin.setsid()
 
         let blocked = Subprocess.run("/usr/bin/sudo", ["-n", Paths.selfExecutable.path, "block"]) == 0
+        if !blocked {
+            // User will see the parenthetical in the notification, but anyone running the
+            // daemon in the foreground (or tailing stderr) deserves a clearer signal.
+            FileHandle.standardError.write(Data("focus: warning — sudo -n block failed. Is /etc/sudoers.d/focus installed?\n".utf8))
+        }
 
         if let music = music, !music.isEmpty {
             _ = Subprocess.run(Paths.selfExecutable.path, ["music", music])

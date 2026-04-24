@@ -3,8 +3,8 @@ import Foundation
 enum BlockList {
     /// Matches bare-ish hostnames. Rejects newlines, spaces, and shell metachars, which
     /// would otherwise let a malicious block.txt inject arbitrary /etc/hosts entries.
-    static let hostnamePattern = "^[a-zA-Z0-9][a-zA-Z0-9.\\-]*$"
-    private static let regex = try! NSRegularExpression(pattern: hostnamePattern)
+    /// Swift Regex literal is compile-time checked, so an invalid pattern is a build error.
+    private static let hostnameRegex = #/^[a-zA-Z0-9][a-zA-Z0-9.\-]*$/#
 
     struct InvalidEntry: Error, LocalizedError {
         let path: URL
@@ -16,8 +16,7 @@ enum BlockList {
     }
 
     static func isValid(_ site: String) -> Bool {
-        let range = NSRange(site.startIndex..., in: site)
-        return regex.firstMatch(in: site, range: range) != nil
+        (try? hostnameRegex.wholeMatch(in: site)) != nil
     }
 
     /// Parse a block file. Blank lines and `#`-prefixed comments are ignored. `www.` is

@@ -7,18 +7,10 @@ import Darwin
 enum LocalPlayback {
     static func start(path: URL, loop: Bool) throws {
         stop()
-        let p = Process()
-        if loop {
-            p.executableURL = Paths.selfExecutable
-            p.arguments = ["_afplay-loop", "--file", path.path]
-        } else {
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
-            p.arguments = [path.path]
-        }
-        p.standardInput = FileHandle.nullDevice
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        try p.run()
+        let (exe, args): (URL, [String]) = loop
+            ? (Paths.selfExecutable, ["_afplay-loop", "--file", path.path])
+            : (URL(fileURLWithPath: "/usr/bin/afplay"), [path.path])
+        let p = try Subprocess.launchSilent(exe, args)
         try String(p.processIdentifier).write(to: Paths.musicPid, atomically: true, encoding: .utf8)
     }
 

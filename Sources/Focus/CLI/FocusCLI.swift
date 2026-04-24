@@ -26,14 +26,19 @@ func requireRoot() throws {
     }
 }
 
+/// Expand `~` and verify the file exists. Throws `CLIError.missingFile` otherwise.
+func resolveExistingFile(_ path: String) throws -> URL {
+    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    guard FileManager.default.fileExists(atPath: url.path) else {
+        throw CLIError.missingFile(url)
+    }
+    return url
+}
+
 /// Resolve the default or user-supplied block file path.
 func resolveBlockFile(_ override: String?) throws -> URL {
     if let override = override, !override.isEmpty {
-        let url = URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
-        if !FileManager.default.fileExists(atPath: url.path) {
-            throw CLIError.missingFile(url)
-        }
-        return url
+        return try resolveExistingFile(override)
     }
     if let url = Paths.defaultBlockFile {
         return url

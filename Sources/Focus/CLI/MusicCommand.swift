@@ -43,10 +43,7 @@ struct Music: ParsableCommand {
         }
 
         if let filePath = file {
-            let url = URL(fileURLWithPath: (filePath as NSString).expandingTildeInPath)
-            if !FileManager.default.fileExists(atPath: url.path) {
-                throw CLIError.missingFile(url)
-            }
+            let url = try resolveExistingFile(filePath)
             try LocalPlayback.start(path: url, loop: loop)
             print("focus: playing \(url.path)" + (loop ? " (looped)" : ""))
             return
