@@ -31,6 +31,13 @@ struct MenuContent: View {
 
         Divider()
 
+        Button("Settings…") {
+            NSApp.activate(ignoringOtherApps: true)
+            // SettingsLink is macOS 14+; sendAction works on 13+.
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
+        .keyboardShortcut(",")
+
         Button("Quit Focus") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
     }

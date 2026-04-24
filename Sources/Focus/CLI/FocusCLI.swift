@@ -8,8 +8,8 @@ struct FocusCLI: ParsableCommand {
         subcommands: [
             Block.self,
             Unblock.self,
-            Toggle.self,
-            Status.self,
+            ToggleCommand.self,
+            StatusCommand.self,
             Music.self,
             Pomodoro.self,
             AfplayLoop.self,

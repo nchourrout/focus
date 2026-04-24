@@ -35,7 +35,7 @@ struct Unblock: ParsableCommand {
     }
 }
 
-struct Toggle: ParsableCommand {
+struct ToggleCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "toggle",
         abstract: "block if inactive, unblock if active (needs sudo)"
@@ -68,7 +68,7 @@ struct Toggle: ParsableCommand {
     }
 }
 
-struct Status: ParsableCommand {
+struct StatusCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "status",
         abstract: "show current block status"

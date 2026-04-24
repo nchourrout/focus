@@ -9,6 +9,8 @@ A macOS menu bar app + CLI to get in the zone.
 - **Block distracting websites** by editing `/etc/hosts`
 - **Play focus music** via Spotify or a local audio file
 - **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up automatically
+- **Global hotkeys** for start/stop pomodoro and toggle block, configurable in Settings
+- **Launch at login** toggle via `SMAppService`
 - One Swift binary is both the menu bar app (run with no args) and the CLI (run with a subcommand)
 
 > The repo was originally a Python script, archived at the tag [`v0-python`](https://github.com/nchourrout/focus/tree/v0-python). The Swift rewrite is wire-compatible: same `/etc/hosts` markers, same `~/.focus-pomodoro.json` schema.
@@ -26,7 +28,7 @@ cd ~/dev/focus
 open /Applications/Focus.app    # launches the menu bar app
 ```
 
-To auto-launch on login, add `Focus.app` under System Settings → General → Login Items.
+Open **Settings…** from the menu (⌘,) to bind global hotkeys and toggle launch-at-login.
 
 ## Menu bar
 
@@ -36,6 +38,7 @@ Click the icon for a dropdown:
 - **Start pomodoro…** — prompts for a goal; replaced by **Stop pomodoro** while running
 - **Block / Unblock websites** — toggles `/etc/hosts` (uses the sudoers drop-in)
 - **Music** submenu — any preset, or Stop
+- **Settings…** — tabbed window with General (launch at login) and Shortcuts (global hotkey recorders)
 - **Quit Focus**
 
 Menu actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.json` stays the single source of truth. The menu bar polls it once a second.

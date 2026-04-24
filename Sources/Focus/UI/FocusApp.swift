@@ -11,14 +11,19 @@ struct FocusApp: App {
             StatusLabel(state: state)
         }
         .menuBarExtraStyle(.menu)
+
+        Settings {
+            SettingsContent()
+        }
     }
 }
 
-/// NSApp is only guaranteed wired up once the app has launched, so the activation
-/// policy switch lives here rather than in FocusApp.init().
+/// NSApp is only guaranteed wired up once the app has launched, so activation-
+/// policy and hotkey-registration side effects live here rather than in init().
 final class FocusAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        HotKeys.registerAll()
     }
 }
 
