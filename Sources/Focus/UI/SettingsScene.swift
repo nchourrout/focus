@@ -15,7 +15,8 @@ struct SettingsContent: View {
 }
 
 private struct GeneralTab: View {
-    @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
+    /// Trigger to force SwiftUI re-evaluation after SMAppService state changes.
+    @State private var refreshTick = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -26,14 +27,17 @@ private struct GeneralTab: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { refreshTick += 1 }
     }
 
+    /// Reads `SMAppService.mainApp.status` on every access so the toggle always
+    /// reflects the live state, not a snapshot from view init.
     private var launchAtLoginBinding: Binding<Bool> {
         Binding(
-            get: { launchAtLogin },
+            get: { _ = refreshTick; return LaunchAtLogin.isEnabled },
             set: { newValue in
                 LaunchAtLogin.set(newValue)
-                launchAtLogin = LaunchAtLogin.isEnabled
+                refreshTick += 1
             }
         )
     }

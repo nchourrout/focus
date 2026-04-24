@@ -7,7 +7,9 @@ enum PomodoroDaemon {
     /// state file (dead PID) by clearing and proceeding.
     static func launch(goal: String, workMinutes: Int, breakMinutes: Int, music: String?) throws {
         if let existing = PomodoroState.current {
-            if isPIDAlive(existing.pid) {
+            // Verify the PID is both alive *and* actually our daemon, to guard against
+            // PID recycling (a long-running process reusing the dead daemon's PID).
+            if isOurProcess(pid: existing.pid, expectedStart: existing.startedAt) {
                 throw CLIError.alreadyRunning
             }
             print("focus: clearing stale pomodoro state from previous session")
@@ -20,15 +22,9 @@ enum PomodoroDaemon {
         // Single source of truth for preset / env-var resolution. Fails fast on unknown preset.
         let musicURI = try MusicPresets.resolve(target: music, explicitURI: nil)
 
-        // Write state before forking so `pomodoro stop` always sees the session.
-        var state = PomodoroState(
-            goal: goal, pid: 0, startedAt: now,
-            workEnd: workEnd, breakEnd: breakEnd, music: musicURI
-        )
-        try state.save()
-
-        let p = Process()
-        p.executableURL = Paths.selfExecutable
+        // Spawn the daemon first so we can write the state file once, with the real PID.
+        // Writing a placeholder state beforehand opened a window where `pomodoro stop`
+        // could see pid=0, skip the signal, and leak the daemon.
         var args = [
             "_pomodoro-run",
             "--goal", goal,
@@ -38,13 +34,12 @@ enum PomodoroDaemon {
         if let music = musicURI {
             args.append(contentsOf: ["--music", music])
         }
-        p.arguments = args
-        p.standardInput = FileHandle.nullDevice
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        try p.run()
+        let p = try Subprocess.launchSilent(Paths.selfExecutable, args)
 
-        state.pid = p.processIdentifier
+        let state = PomodoroState(
+            goal: goal, pid: p.processIdentifier, startedAt: now,
+            workEnd: workEnd, breakEnd: breakEnd, music: musicURI
+        )
         try state.save()
 
         print("focus: pomodoro started — \(workMinutes)min work, \(breakMinutes)min break — \(goal)")
@@ -91,9 +86,9 @@ enum PomodoroDaemon {
             print("focus: no pomodoro running")
             return
         }
-        if state.pid > 0 && isPIDAlive(state.pid) {
+        // Only signal if the PID is still ours; skip if the PID has been recycled.
+        if isOurProcess(pid: state.pid, expectedStart: state.startedAt) {
             _ = kill(state.pid, SIGTERM)
-            // Wait up to a second for the daemon to exit on its own.
             for _ in 0..<10 {
                 usleep(100_000)
                 if !isPIDAlive(state.pid) { break }

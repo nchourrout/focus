@@ -12,16 +12,21 @@ enum HotKeys {
     /// Wire each shortcut to an action. Recorder UI is in SettingsScene; the user
     /// sets and removes bindings there. Library persists them in UserDefaults.
     static func registerAll() {
+        // Library dispatches on main but the closure isn't typed as MainActor-isolated.
+        // Wrapping with MainActor.assumeIsolated makes the isolation explicit and future-proofs
+        // against Swift concurrency checks tightening.
         KeyboardShortcuts.onKeyUp(for: .startPomodoro) {
-            if PomodoroState.current == nil {
-                Actions.promptAndStartPomodoro()
+            MainActor.assumeIsolated {
+                if PomodoroState.current == nil {
+                    Actions.promptAndStartPomodoro()
+                }
             }
         }
         KeyboardShortcuts.onKeyUp(for: .stopPomodoro) {
-            Actions.stopPomodoro()
+            MainActor.assumeIsolated { Actions.stopPomodoro() }
         }
         KeyboardShortcuts.onKeyUp(for: .toggleBlock) {
-            Actions.toggleBlock()
+            MainActor.assumeIsolated { Actions.toggleBlock() }
         }
     }
 }

@@ -23,14 +23,22 @@ enum HostsFile {
 
     /// Remove the marker-delimited section from a hosts file body, returning the remainder
     /// with a single trailing newline.
+    ///
+    /// Safety: an unmatched START (no closing END, from a crash mid-write) would otherwise
+    /// silently drop the rest of the file. We detect that case and leave the input alone.
     static func strip(_ content: String) -> String {
         var out: [String] = []
         var skipping = false
-        for raw in content.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(raw)
+        // Split on any newline variant so CRLF input doesn't leave \r baked into entries.
+        for raw in content.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\r"))
             if line.contains(markerStart) { skipping = true; continue }
             if line.contains(markerEnd) { skipping = false; continue }
             if !skipping { out.append(line) }
+        }
+        if skipping {
+            // Mismatched markers — refuse to mangle the file.
+            return content
         }
         return out.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
     }

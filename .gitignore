@@ -2,7 +2,7 @@
 .swiftpm/
 .DS_Store
 *.xcodeproj/
-Package.resolved
+# Package.resolved is committed so clones resolve to the same dependency versions.
 
 # Build outputs
 Focus.app/

@@ -17,6 +17,10 @@ echo "==> installing $APP_DEST"
 sudo rm -rf "$APP_DEST"
 sudo cp -R "$APP_SRC" "$APP_DEST"
 
+# Local builds are unsigned; strip the quarantine flag so Gatekeeper doesn't
+# block the first open. (Not a no-op for apps downloaded from the web.)
+sudo xattr -dr com.apple.quarantine "$APP_DEST" 2>/dev/null || true
+
 echo "==> symlinking $CLI_LINK -> $BIN_INSIDE"
 sudo mkdir -p "$(dirname "$CLI_LINK")"
 sudo ln -sf "$BIN_INSIDE" "$CLI_LINK"

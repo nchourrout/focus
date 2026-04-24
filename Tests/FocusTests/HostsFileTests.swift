@@ -43,4 +43,26 @@ import Testing
         #expect(!result.contains("two.com"))
         #expect(result.contains("localhost"))
     }
+
+    @Test func stripHandlesCRLF() {
+        let input = "127.0.0.1 localhost\r\n# === FOCUS BLOCK START ===\r\n127.0.0.1 youtube.com\r\n# === FOCUS BLOCK END ===\r\n::1 localhost\r\n"
+        let result = HostsFile.strip(input)
+        #expect(!result.contains("\r"), "CRLF input should not leak \\r into output")
+        #expect(!result.contains("youtube"))
+        #expect(result.contains("localhost"))
+    }
+
+    @Test func stripRefusesToDropContentOnUnmatchedStart() {
+        // An unmatched START (no END) used to silently drop the remainder of the file.
+        // Now we return the input unchanged rather than mangle /etc/hosts.
+        let input = """
+        127.0.0.1 localhost
+        # === FOCUS BLOCK START ===
+        127.0.0.1 youtube.com
+        (crashed mid-write, no end marker)
+        """
+        let result = HostsFile.strip(input)
+        #expect(result.contains("localhost"))
+        #expect(result.contains("youtube.com"), "unmatched markers should preserve the input")
+    }
 }

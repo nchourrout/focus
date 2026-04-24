@@ -73,14 +73,41 @@ enum Actions {
     }
 
     /// Same as `spawn` but routes through `sudo -n`. Requires the sudoers drop-in.
+    /// Also waits briefly and checks sudo's exit code — if the drop-in is missing,
+    /// we surface an alert so the user understands why the menu action did nothing.
     private static func spawnSudo(_ args: [String]) {
         do {
-            _ = try Subprocess.launchSilent(
+            let p = try Subprocess.launchSilent(
                 URL(fileURLWithPath: "/usr/bin/sudo"),
                 ["-n", Paths.selfExecutable.path] + args
             )
+            // sudo -n finishes fast whether it succeeds or fails. Checking exit
+            // status lets us distinguish "ran" from "no sudoers entry".
+            Task.detached {
+                p.waitUntilExit()
+                if p.terminationStatus != 0 {
+                    await MainActor.run { showSudoersMissingAlert() }
+                }
+            }
         } catch {
             log.error("sudo spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            showSudoersMissingAlert()
         }
+    }
+
+    private static func showSudoersMissingAlert() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Focus can't change /etc/hosts"
+        alert.informativeText = """
+        sudo rejected the command. Install the sudoers drop-in:
+
+          ~/dev/focus/Scripts/install-sudoers.sh
+
+        Then try again.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }

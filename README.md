@@ -30,6 +30,8 @@ open /Applications/Focus.app    # launches the menu bar app
 
 Open **Settings…** from the menu (⌘,) to bind global hotkeys and toggle launch-at-login.
 
+The `.app` is unsigned; `install.sh` strips the quarantine flag so Gatekeeper doesn't block first-open. If you ever see "Focus can't be opened because Apple cannot check it," run `sudo xattr -dr com.apple.quarantine /Applications/Focus.app`.
+
 ## Menu bar
 
 Click the icon for a dropdown:

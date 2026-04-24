@@ -46,4 +46,14 @@ import Foundation
             _ = try BlockList.load(from: tmp)
         }
     }
+
+    @Test func loadHandlesCRLF() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".txt")
+        try "youtube.com\r\namazon.com\r\n".write(to: tmp, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let sites = try BlockList.load(from: tmp)
+        #expect(sites == ["amazon.com", "youtube.com"], "\\r should be stripped, not smuggled into hostnames")
+    }
 }

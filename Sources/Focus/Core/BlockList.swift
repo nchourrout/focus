@@ -25,8 +25,9 @@ enum BlockList {
     static func load(from url: URL) throws -> [String] {
         let content = try String(contentsOf: url, encoding: .utf8)
         var sites = Set<String>()
-        for (idx, raw) in content.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-            let line = raw.trimmingCharacters(in: .whitespaces)
+        // components(separatedBy: .newlines) handles \n, \r, and \r\n uniformly.
+        for (idx, raw) in content.components(separatedBy: .newlines).enumerated() {
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty || line.hasPrefix("#") { continue }
             let site = line.hasPrefix("www.") ? String(line.dropFirst(4)) : line
             guard isValid(site) else {

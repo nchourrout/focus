@@ -4,7 +4,11 @@
 
 set -euo pipefail
 
-BIN="${FOCUS_BIN:-/usr/local/bin/focus}"
+# Default to the real binary path inside the .app bundle. The pomodoro daemon
+# invokes itself via Bundle.main.executablePath (the resolved path), so that is
+# what sudoers needs to whitelist. A symlink like /usr/local/bin/focus would
+# not match — sudo compares argv[0] literally against sudoers entries.
+BIN="${FOCUS_BIN:-/Applications/Focus.app/Contents/MacOS/focus}"
 
 if [[ ! -x "$BIN" ]]; then
   echo "error: $BIN not found or not executable." >&2

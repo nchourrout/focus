@@ -1,9 +1,12 @@
 import Foundation
 import ServiceManagement
+import os
+
+private let log = Logger(subsystem: "com.nchourrout.focus", category: "launch-at-login")
 
 /// Thin wrapper around `SMAppService.mainApp` so the Settings toggle is a one-liner.
 /// Requires Focus.app to live in /Applications; when run from a development build
-/// the call may fail silently (logged, not fatal).
+/// the call may fail silently (logged to Console.app, not fatal).
 @MainActor
 enum LaunchAtLogin {
     static var isEnabled: Bool {
@@ -18,7 +21,7 @@ enum LaunchAtLogin {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            NSLog("LaunchAtLogin: failed to %@: %@", enabled ? "register" : "unregister", String(describing: error))
+            log.error("failed to \(enabled ? "register" : "unregister", privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
     }
 }

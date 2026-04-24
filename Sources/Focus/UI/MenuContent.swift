@@ -31,12 +31,19 @@ struct MenuContent: View {
 
         Divider()
 
-        Button("Settings…") {
-            NSApp.activate(ignoringOtherApps: true)
-            // SettingsLink is macOS 14+; sendAction works on 13+.
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        if #available(macOS 14.0, *) {
+            SettingsLink {
+                Text("Settings…")
+            }
+            .keyboardShortcut(",")
+        } else {
+            // macOS 13 fallback: stringly-typed selector, but only on the one OS that needs it.
+            Button("Settings…") {
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
+            .keyboardShortcut(",")
         }
-        .keyboardShortcut(",")
 
         Button("Quit Focus") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
