@@ -57,8 +57,9 @@ sudo focus unblock               # remove the block
 sudo focus toggle --json         # toggle; emits the new state
 
 focus music --list               # built-in presets
-focus music deepfocus            # play a preset
-focus music spotify:playlist:X   # raw URI
+focus music deepfocus            # navigate Spotify to a preset playlist
+focus music spotify:track:X      # play a track immediately
+focus music spotify:playlist:X   # navigate to a playlist (press Play to start)
 focus music --file ~/brown.mp3 --loop
 focus music --stop
 
@@ -67,6 +68,8 @@ focus pomodoro start "deep work" --work 50 --break 10 --music lofi
 focus pomodoro status                             # add --json for machine-readable
 focus pomodoro stop
 ```
+
+> **Spotify limitation**: only `spotify:track:...` URIs auto-play. Playlist and album URIs (the built-in presets) navigate Spotify and bring it to the front — you press Play (or spacebar) to start. Spotify's AppleScript can't switch playback context to a non-track URI without OAuth against the Web API.
 
 ## Sudoers (system permission)
 

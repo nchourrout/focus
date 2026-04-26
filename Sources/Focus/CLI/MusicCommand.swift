@@ -52,9 +52,14 @@ struct Music: ParsableCommand {
         guard let resolved = try MusicPresets.resolve(target: target, explicitURI: uri) else {
             throw CLIError.missingMusicSource
         }
-        if Spotify.play(uri: resolved) {
+        switch Spotify.play(uri: resolved) {
+        case .playing:
             print("focus: playing \(resolved)")
-        } else {
+        case .opened:
+            // Spotify navigated to the playlist/album but can't auto-start
+            // playback without a track URI (Spotify AppleScript limitation).
+            print("focus: opened \(resolved) in Spotify — press Play to start")
+        case .failed:
             FocusCLI.exit(withError: ExitCode(1))
         }
     }
