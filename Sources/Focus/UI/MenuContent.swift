@@ -50,9 +50,9 @@ struct MenuContent: View {
     @ViewBuilder
     private var pomodoroSection: some View {
         if let p = state.pomodoro {
-            // Disabled items are the idiomatic way to show read-only status in a menu.
-            Text(state.phase == .break ? "Break — \(formatCountdown(state.timeLeft))"
-                                       : "\(p.goal) — \(formatCountdown(state.timeLeft))")
+            // No live countdown here — the menu bar label has it, and re-rendering
+            // a menu item every second would reset AppKit's hover selection.
+            Text(state.phase == .break ? "Break" : p.goal)
             Button("Stop pomodoro") { Actions.stopPomodoro() }
         }
     }

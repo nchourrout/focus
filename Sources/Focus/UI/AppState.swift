@@ -8,8 +8,10 @@ import SwiftUI
 final class AppState: ObservableObject {
     @Published private(set) var pomodoro: PomodoroState?
     @Published private(set) var phase: PomodoroState.Phase = .done
-    @Published private(set) var timeLeft: TimeInterval = 0
     @Published private(set) var blockActive: Bool = false
+    // No @Published timeLeft: per-second updates would also re-render the menu
+    // dropdown via @ObservedObject, which resets AppKit's hover selection.
+    // Views that need a live countdown drive their own ticker (TimelineView).
 
     private var timer: Timer?
     private var refreshInFlight = false
@@ -48,15 +50,14 @@ final class AppState: ObservableObject {
         guard let s = state else {
             if pomodoro != nil { pomodoro = nil }
             if phase != .done { phase = .done }
-            if timeLeft != 0 { timeLeft = 0 }
             return
         }
 
-        let (newPhase, newTimeLeft) = s.phase()
+        // pomodoro/phase only republish on discrete changes (start/stop, work→break,
+        // break→done) — at most a handful of times per session.
+        let (newPhase, _) = s.phase()
         if pomodoro?.pid != s.pid || pomodoro?.goal != s.goal { pomodoro = s }
         if newPhase != phase { phase = newPhase }
-        // Seconds granularity: skip re-render if the displayed time hasn't changed.
-        if Int(newTimeLeft) != Int(timeLeft) { timeLeft = newTimeLeft }
     }
 }
 

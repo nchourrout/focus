@@ -31,19 +31,23 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Menu bar icon + optional countdown label. Updates every tick via AppState.
-/// Uses an explicit HStack instead of Label, because MenuBarExtra renders the
-/// label slot with a hidden-title style by default — the icon shows but the
-/// text gets dropped. HStack keeps both visible.
+/// Menu bar icon + optional countdown label.
+///
+/// The per-second countdown is driven by `TimelineView` so its updates stay
+/// scoped to this subtree. If we drove it from `@Published` properties on
+/// `AppState`, every tick would also re-render `MenuContent`, resetting
+/// AppKit's hover selection in the dropdown.
 struct StatusLabel: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        if state.isRunning {
-            HStack(spacing: 4) {
-                Image(systemName: state.phase == .break ? "cup.and.saucer.fill" : "timer")
-                Text(formatCountdown(state.timeLeft))
-                    .monospacedDigit()
+        if let pomodoro = state.pomodoro, state.isRunning {
+            TimelineView(.periodic(from: .now, by: 1.0)) { ctx in
+                let (phase, timeLeft) = pomodoro.phase(at: ctx.date.timeIntervalSince1970)
+                HStack(spacing: 4) {
+                    Image(systemName: phase == .break ? "cup.and.saucer.fill" : "timer")
+                    Text(formatCountdown(timeLeft)).monospacedDigit()
+                }
             }
         } else {
             Image(systemName: state.blockActive ? "nosign" : "circle.dashed")
