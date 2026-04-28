@@ -25,7 +25,7 @@ extension Pomodoro {
         @Option(name: .customLong("break"), help: ArgumentHelp("Break minutes (default 5)", valueName: "MINS"))
         var breakMinutes: Int = 5
 
-        @Option(help: "Music preset or spotify: URI (default FOCUS_SPOTIFY_URI)")
+        @Option(help: "Music preset or http(s):// stream URL (default FOCUS_MUSIC_URI)")
         var music: String?
 
         func validate() throws {

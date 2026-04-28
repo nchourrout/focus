@@ -6,7 +6,7 @@ import Foundation
     @Test func jsonKeysMatchPythonSchema() throws {
         let state = PomodoroState(
             goal: "test", pid: 1234, startedAt: 1000,
-            workEnd: 2500, breakEnd: 2800, music: "spotify:playlist:abc"
+            workEnd: 2500, breakEnd: 2800, music: "https://example.com/stream.mp3"
         )
         let data = try JSONEncoder().encode(state)
         let obj = try #require(
@@ -17,7 +17,7 @@ import Foundation
         #expect(obj["started_at"] as? Double == 1000)
         #expect(obj["work_end"] as? Double == 2500)
         #expect(obj["break_end"] as? Double == 2800)
-        #expect(obj["music"] as? String == "spotify:playlist:abc")
+        #expect(obj["music"] as? String == "https://example.com/stream.mp3")
     }
 
     @Test func roundtripDecode() throws {

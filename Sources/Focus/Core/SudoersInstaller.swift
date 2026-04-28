@@ -72,15 +72,19 @@ enum SudoersInstaller {
             throw InstallError.invalidRule(visudo.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
-        // tmp.path is UUID-based (no apostrophes / control chars); dropInPath is a constant.
+        // We single-quote both paths in the shell command, which is safe as long as
+        // neither contains an apostrophe. Validate to be sure — NSTemporaryDirectory()
+        // can sit under exotic home directories (`/Users/O'Brien/...`).
+        try assertSafe(tmp.path, field: "temp path")
         let command = "/bin/cp '\(tmp.path)' '\(dropInPath)' && /bin/chmod 0440 '\(dropInPath)'"
         let script = "do shell script \"\(escapeAppleScript(command))\" with administrator privileges"
         let result = Subprocess.runCapturingStderr("/usr/bin/osascript", ["-e", script])
         if result.status == 0 { return }
         // osascript exits 1 for any script-level error. User cancellation specifically
-        // carries the `-128` error code in stderr ("User canceled. (-128)"), so we
-        // use that string as the signal rather than the exit code alone.
-        if result.stderr.contains("-128") {
+        // carries the `(-128)` error code in stderr ("User canceled. (-128)"), so we
+        // match the parenthesized form to avoid false positives on errors that
+        // happen to contain the digits "-128" elsewhere.
+        if result.stderr.contains("(-128)") {
             throw InstallError.userCancelled
         }
         throw InstallError.systemFailure(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))

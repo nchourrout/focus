@@ -14,11 +14,9 @@ final class AppState: ObservableObject {
     private var timer: Timer?
 
     init() {
-        refresh()
-        // Timer fires on the main run loop since init runs on @MainActor;
-        // no need to hop actors again inside the callback.
+        Task { await refresh() }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
+            Task { await self?.refresh() }
         }
     }
 
@@ -29,11 +27,19 @@ final class AppState: ObservableObject {
         pomodoro != nil && phase != .done
     }
 
-    func refresh() {
-        let newBlock = HostsFile.isActive()
+    /// Read /etc/hosts and the pomodoro state file off the main thread so the
+    /// menu bar doesn't stall on disk I/O, then publish changes back on @MainActor.
+    func refresh() async {
+        let snapshot = await Task.detached {
+            (block: HostsFile.isActive(), state: PomodoroState.current)
+        }.value
+        apply(blockActive: snapshot.block, state: snapshot.state)
+    }
+
+    private func apply(blockActive newBlock: Bool, state: PomodoroState?) {
         if newBlock != blockActive { blockActive = newBlock }
 
-        guard let s = PomodoroState.current else {
+        guard let s = state else {
             if pomodoro != nil { pomodoro = nil }
             if phase != .done { phase = .done }
             if timeLeft != 0 { timeLeft = 0 }

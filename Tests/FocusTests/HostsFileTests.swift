@@ -52,6 +52,30 @@ import Testing
         #expect(result.contains("localhost"))
     }
 
+    @Test func applyThenStripRoundtripIsIdempotent() {
+        let base = "127.0.0.1 localhost\n::1 localhost\n"
+        let entries = """
+        \(HostsFile.markerStart)
+        127.0.0.1 youtube.com
+        127.0.0.1 www.youtube.com
+        \(HostsFile.markerEnd)
+        """
+        let blocked = base + entries + "\n"
+
+        // strip() must restore the base exactly (modulo whitespace).
+        let stripped = HostsFile.strip(blocked)
+        #expect(stripped.contains("127.0.0.1 localhost"))
+        #expect(stripped.contains("::1 localhost"))
+        #expect(!stripped.contains("youtube.com"))
+
+        // Re-stripping the same input is a no-op (no double-block accumulation).
+        #expect(HostsFile.strip(stripped) == stripped)
+
+        // strip() of the unblocked input is also a no-op.
+        #expect(HostsFile.strip(base).trimmingCharacters(in: .whitespacesAndNewlines)
+                == base.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     @Test func stripRefusesToDropContentOnUnmatchedStart() {
         // An unmatched START (no END) used to silently drop the remainder of the file.
         // Now we return the input unchanged rather than mangle /etc/hosts.

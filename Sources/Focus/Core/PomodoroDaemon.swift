@@ -67,13 +67,15 @@ enum PomodoroDaemon {
             _ = Subprocess.run(Paths.selfExecutable.path, ["music", music])
         }
 
+        // sanitizeAppleScriptString rejects control characters, so the appended
+        // status uses an em-dash separator rather than a newline.
         Notifier.post(
             title: "Pomodoro started",
-            body: goal + (blocked ? "" : "\n(couldn't block websites)")
+            body: goal + (blocked ? "" : " — couldn't block websites")
         )
 
         sleepUntil(workEnd)
-        Notifier.post(title: "Pomodoro complete", body: "Finished: \(goal)\nBreak time.")
+        Notifier.post(title: "Pomodoro complete", body: "Finished: \(goal) — break time.")
 
         sleepUntil(breakEnd)
         Notifier.post(title: "Break over", body: "Ready for another session?")
@@ -133,7 +135,7 @@ enum CLIError: Error, LocalizedError {
         case .missingFile(let url):
             return "focus: file not found: \(url.path)"
         case .missingMusicSource:
-            return "focus: no music source. Pass a preset name, --uri, --file, or set FOCUS_SPOTIFY_URI. See `focus music --list`."
+            return "focus: no music source. Pass a preset name, --uri, --file, or set FOCUS_MUSIC_URI. See `focus music --list`."
         }
     }
 }

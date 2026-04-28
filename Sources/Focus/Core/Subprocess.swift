@@ -54,9 +54,19 @@ enum Subprocess {
         p.standardError = err
         do {
             try p.run()
+            // Drain the pipe in the background so a noisy child can't block on
+            // a full pipe buffer (~64 KB on macOS) while we sit in waitUntilExit.
+            var collected = Data()
+            let drainQueue = DispatchQueue(label: "focus.subprocess.stderr-drain")
+            let group = DispatchGroup()
+            group.enter()
+            drainQueue.async {
+                collected = err.fileHandleForReading.readDataToEndOfFile()
+                group.leave()
+            }
             p.waitUntilExit()
-            let data = err.fileHandleForReading.readDataToEndOfFile()
-            return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+            group.wait()
+            return (p.terminationStatus, String(data: collected, encoding: .utf8) ?? "")
         } catch {
             return (-1, "\(error)")
         }

@@ -29,15 +29,19 @@ enum LocalPlayback {
     static func stop() {
         guard FileManager.default.fileExists(atPath: Paths.musicPid.path),
               let text = try? String(contentsOf: Paths.musicPid, encoding: .utf8),
-              let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+              let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              pid > 0 else {
             try? FileManager.default.removeItem(at: Paths.musicPid)
             return
         }
-        // Signal the whole process group. The loop wrapper makes itself a session
-        // leader (see `runAfplayLoop`), so this also kills the current afplay child.
-        _ = killpg(pid, SIGTERM)
-        // Also hit the direct pid in case setsid didn't run yet.
-        _ = kill(pid, SIGTERM)
+        // Don't signal an already-dead PID — the OS may have recycled it to an
+        // unrelated process (group), and `killpg` would hit that instead.
+        if isPIDAlive(pid) {
+            // Signal the whole process group. The loop/stream wrapper makes itself
+            // a session leader, so killpg also reaches its child (afplay or AVPlayer).
+            _ = killpg(pid, SIGTERM)
+            _ = kill(pid, SIGTERM)
+        }
         try? FileManager.default.removeItem(at: Paths.musicPid)
     }
 

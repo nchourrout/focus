@@ -51,12 +51,22 @@ enum Actions {
 
     // MARK: Music
 
+    /// Music actions don't need root, so we call Core directly instead of forking
+    /// a CLI subprocess — saves a fork and lets us surface errors to the user.
     static func playMusic(_ preset: String) {
-        spawn(["music", preset])
+        do {
+            guard let uri = try MusicPresets.resolve(target: preset, explicitURI: nil) else {
+                log.error("playMusic: \(preset, privacy: .public) resolved to nothing")
+                return
+            }
+            try LocalPlayback.startStream(url: uri)
+        } catch {
+            log.error("playMusic \(preset, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     static func stopMusic() {
-        spawn(["music", "--stop"])
+        LocalPlayback.stop()
     }
 
     // MARK: Private
