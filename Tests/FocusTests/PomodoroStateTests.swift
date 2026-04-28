@@ -45,4 +45,23 @@ import Foundation
         #expect(!isPIDAlive(-1))
         #expect(!isPIDAlive(0))
     }
+
+    @Test func pidStartTimeMatchesSelf() throws {
+        let start = try #require(pidStartTime(getpid()))
+        // Our own process started in the past, definitely before "now + 1s".
+        #expect(start < Date().timeIntervalSince1970 + 1)
+        // And not way in the past (sanity floor: not before 2020).
+        #expect(start > 1_577_836_800)
+    }
+
+    @Test func isOurProcessDetectsPIDRecycling() throws {
+        let pid = getpid()
+        let actualStart = try #require(pidStartTime(pid))
+        // A start-time within tolerance: this *is* our process.
+        #expect(isOurProcess(pid: pid, expectedStart: actualStart))
+        // A start-time far from the actual one: PID is alive but identity differs.
+        #expect(!isOurProcess(pid: pid, expectedStart: actualStart - 10_000))
+        // A definitely-dead PID: not ours.
+        #expect(!isOurProcess(pid: -1, expectedStart: actualStart))
+    }
 }

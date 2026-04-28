@@ -56,4 +56,18 @@ import Foundation
         let sites = try BlockList.load(from: tmp)
         #expect(sites == ["amazon.com", "youtube.com"], "\\r should be stripped, not smuggled into hostnames")
     }
+
+    @Test func loadRejectsInjectionInCRLFFile() throws {
+        // /etc/hosts injection attempt on a CRLF-encoded block file. The
+        // injection line ("127.0.0.1 evil.com") fails hostname validation
+        // even though the line endings are \r\n.
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".txt")
+        try "good.com\r\n127.0.0.1 evil.com\r\n".write(to: tmp, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        #expect(throws: BlockList.InvalidEntry.self) {
+            _ = try BlockList.load(from: tmp)
+        }
+    }
 }

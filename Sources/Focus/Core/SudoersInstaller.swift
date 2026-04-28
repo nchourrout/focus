@@ -50,8 +50,14 @@ enum SudoersInstaller {
         """
     }
 
+    /// Pure check exposed for unit tests: does `value` consist only of the
+    /// characters we're willing to interpolate into the sudoers rule?
+    static func isSafeToken(_ value: String) -> Bool {
+        (try? safeTokenPattern.wholeMatch(in: value)) != nil
+    }
+
     private static func assertSafe(_ value: String, field: String) throws {
-        guard (try? safeTokenPattern.wholeMatch(in: value)) != nil else {
+        guard isSafeToken(value) else {
             throw InstallError.unsafeInput(field)
         }
     }

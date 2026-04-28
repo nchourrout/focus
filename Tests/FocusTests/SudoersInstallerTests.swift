@@ -12,6 +12,28 @@ import Foundation
         #expect(rule.hasPrefix(NSUserName()), "rule's first token must be the username at column 0")
     }
 
+    @Test func safeTokenAcceptsExpectedValues() {
+        for ok in ["nico", "user_name", "user-name", "/Applications/Focus.app/Contents/MacOS/focus", "a.b.c"] {
+            #expect(SudoersInstaller.isSafeToken(ok), "should accept: \(ok)")
+        }
+    }
+
+    @Test func safeTokenRejectsUnsafeValues() {
+        // sudoers metacharacters / shell-meta / whitespace / control: each must fail.
+        for bad in [
+            "user with space",       // whitespace
+            "user'name",             // apostrophe (would break shell single-quotes)
+            "user\"name",            // double quote
+            "user;rm -rf",           // shell injection
+            "user\nALL=(root)",      // newline injection
+            "%wheel",                // sudoers group reference
+            "",                      // empty
+            "user$",                 // shell expansion
+        ] {
+            #expect(!SudoersInstaller.isSafeToken(bad), "should reject: \(bad.debugDescription)")
+        }
+    }
+
     /// Catches indentation regressions in the multiline string literal: the first
     /// line must start at column 0, and each continuation must be valid sudoers.
     @Test func generatedRulePassesVisudo() throws {
