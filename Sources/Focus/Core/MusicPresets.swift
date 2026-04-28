@@ -1,13 +1,18 @@
 import Foundation
 
-/// Curated focus playlists. Edit to taste; later phases move this to user-editable config.
+/// Curated focus streams from SomaFM (https://somafm.com) — listener-supported,
+/// no ads, no account, no Spotify required. AVPlayer drives them in a detached
+/// subprocess (`_stream-play`).
+///
+/// Spotify URIs (spotify:playlist:..., spotify:track:...) are still accepted
+/// when passed directly via the positional argument or `--uri`.
 enum MusicPresets {
     static let list: [(name: String, uri: String)] = [
-        ("deepfocus", "spotify:playlist:37i9dQZF1DX0XUsuxWHRQd"),  // Deep Focus
-        ("piano",     "spotify:playlist:37i9dQZF1DX4sWSpwq3LiO"),  // Peaceful Piano
-        ("lofi",      "spotify:playlist:37i9dQZF1DWWQRwui0ExPn"),  // Lofi Beats
-        ("intense",   "spotify:playlist:37i9dQZF1DX8NTLI2TtZa6"),  // Intense Studying
-        ("ambient",   "spotify:playlist:37i9dQZF1DX3Ogo9pFvBkY"),  // Ambient Relaxation
+        ("dronezone",      "https://ice4.somafm.com/dronezone-128-mp3"),       // Ambient drift
+        ("groovesalad",    "https://ice2.somafm.com/groovesalad-128-mp3"),     // Chillout / downtempo
+        ("missioncontrol", "https://ice2.somafm.com/missioncontrol-128-mp3"),  // NASA / space ambient
+        ("cliqhop",        "https://ice2.somafm.com/cliqhop-128-mp3"),         // Electronic / IDM
+        ("deepspaceone",   "https://ice4.somafm.com/deepspaceone-128-mp3"),    // Deep ambient electronic
     ]
 
     static func uri(for name: String) -> String? {
@@ -16,13 +21,15 @@ enum MusicPresets {
 
     static var names: [String] { list.map { $0.name } }
 
-    /// Precedence: explicit URI > target (preset name or raw spotify: URI) > FOCUS_SPOTIFY_URI env.
+    /// Precedence: explicit URI > target (preset name, spotify: URI, or http(s):// stream) > FOCUS_SPOTIFY_URI env.
     /// Returns nil if nothing resolvable; throws if target looks like a preset name but isn't one.
     static func resolve(target: String?, explicitURI: String?) throws -> String? {
         if let uri = explicitURI, !uri.isEmpty { return uri }
         if let t = target, !t.isEmpty {
             if let uri = uri(for: t) { return uri }
-            if t.hasPrefix("spotify:") { return t }
+            if t.hasPrefix("spotify:") || t.hasPrefix("http://") || t.hasPrefix("https://") {
+                return t
+            }
             throw ResolveError.unknownPreset(t)
         }
         let env = ProcessInfo.processInfo.environment["FOCUS_SPOTIFY_URI"] ?? ""

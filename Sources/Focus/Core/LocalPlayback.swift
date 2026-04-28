@@ -14,6 +14,17 @@ enum LocalPlayback {
         try String(p.processIdentifier).write(to: Paths.musicPid, atomically: true, encoding: .utf8)
     }
 
+    /// Launch a detached `_stream-play` subprocess to play an HTTP audio stream.
+    /// Tracked via the same PID file as afplay, so `stop()` works for both.
+    static func startStream(url: String) throws {
+        stop()
+        let p = try Subprocess.launchSilent(
+            Paths.selfExecutable,
+            ["_stream-play", "--url", url]
+        )
+        try String(p.processIdentifier).write(to: Paths.musicPid, atomically: true, encoding: .utf8)
+    }
+
     static func stop() {
         guard FileManager.default.fileExists(atPath: Paths.musicPid.path),
               let text = try? String(contentsOf: Paths.musicPid, encoding: .utf8),

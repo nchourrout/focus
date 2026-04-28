@@ -52,16 +52,41 @@ struct Music: ParsableCommand {
         guard let resolved = try MusicPresets.resolve(target: target, explicitURI: uri) else {
             throw CLIError.missingMusicSource
         }
-        switch Spotify.play(uri: resolved) {
-        case .playing:
-            print("focus: playing \(resolved)")
-        case .opened:
-            // Spotify navigated to the playlist/album but can't auto-start
-            // playback without a track URI (Spotify AppleScript limitation).
-            print("focus: opened \(resolved) in Spotify — press Play to start")
-        case .failed:
-            FocusCLI.exit(withError: ExitCode(1))
+
+        if resolved.hasPrefix("http://") || resolved.hasPrefix("https://") {
+            try LocalPlayback.startStream(url: resolved)
+            print("focus: streaming \(resolved)")
+            return
         }
+
+        if resolved.hasPrefix("spotify:") {
+            switch Spotify.play(uri: resolved) {
+            case .playing:
+                print("focus: playing \(resolved)")
+            case .opened:
+                print("focus: opened \(resolved) in Spotify — press Play to start")
+            case .failed:
+                FocusCLI.exit(withError: ExitCode(1))
+            }
+            return
+        }
+
+        FocusCLI.exit(withError: ExitCode(1))
+    }
+}
+
+/// Hidden: subprocess that plays an HTTP audio stream via AVPlayer.
+struct StreamPlay: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "_stream-play",
+        shouldDisplay: false
+    )
+
+    @Option(help: "HTTP audio stream URL to play.")
+    var url: String
+
+    func run() {
+        StreamPlayer.run(url: url)
     }
 }
 

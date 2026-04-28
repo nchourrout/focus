@@ -13,6 +13,7 @@ struct FocusCLI: ParsableCommand {
             Music.self,
             Pomodoro.self,
             AfplayLoop.self,
+            StreamPlay.self,
             PomodoroRun.self,
         ]
     )
