@@ -31,19 +31,19 @@ struct MenuContent: View {
 
         Divider()
 
-        if #available(macOS 14.0, *) {
-            SettingsLink {
-                Text("Settings…")
+        // SettingsLink (macOS 14+) doesn't reliably open the Settings scene from a
+        // MenuBarExtra in an LSUIElement (accessory) app — the scene gets created
+        // but the window never comes forward. Activating + dispatching
+        // showSettingsWindow: works on both 13 and 14+.
+        Button("Settings…") {
+            NSApp.activate(ignoringOtherApps: true)
+            if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
+                return
             }
-            .keyboardShortcut(",")
-        } else {
-            // macOS 13 fallback: stringly-typed selector, but only on the one OS that needs it.
-            Button("Settings…") {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            }
-            .keyboardShortcut(",")
+            // Older selector name used pre-macOS 13.
+            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
         }
+        .keyboardShortcut(",")
 
         Button("Quit Focus") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
