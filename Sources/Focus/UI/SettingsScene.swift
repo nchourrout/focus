@@ -123,11 +123,10 @@ private struct GeneralTab: View {
     private var blockDoHBinding: Binding<Bool> {
         Binding(
             get: { _ = refreshTick; return Defaults.blockDoHEndpoints },
-            set: {
-                Defaults.blockDoHEndpoints = $0
+            set: { newValue in
+                guard newValue != Defaults.blockDoHEndpoints else { return }
+                Defaults.blockDoHEndpoints = newValue
                 refreshTick += 1
-                // If the block is currently active, push the new setting through
-                // to /etc/hosts immediately rather than waiting for the next toggle.
                 Actions.reapplyBlock()
             }
         )

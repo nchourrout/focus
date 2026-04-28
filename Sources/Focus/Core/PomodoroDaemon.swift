@@ -61,8 +61,8 @@ enum PomodoroDaemon {
 
         var blockFailed = false
         if block {
-            var blockArgs = ["-n", Paths.selfExecutable.path, "block"]
-            if !Defaults.blockDoHEndpoints { blockArgs.append("--no-block-doh") }
+            let blockArgs = ["-n", Paths.selfExecutable.path, "block"]
+                + Defaults.dohSuppressionFlags
             let blocked = Subprocess.run("/usr/bin/sudo", blockArgs) == 0
             if !blocked {
                 blockFailed = true

@@ -66,11 +66,10 @@ enum Actions {
     /// state so the click has visible effect (the menu bar icon also changes,
     /// but only after AppState's next 1Hz refresh).
     static func toggleBlock() {
-        var args = ["-n", Paths.selfExecutable.path, "toggle", "--json"]
-        if !Defaults.blockDoHEndpoints { args.append("--no-block-doh") }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        p.arguments = args
+        p.arguments = ["-n", Paths.selfExecutable.path, "toggle", "--json"]
+            + Defaults.dohSuppressionFlags
         p.standardInput = FileHandle.nullDevice
         let outPipe = Pipe()
         p.standardOutput = outPipe
@@ -102,28 +101,12 @@ enum Actions {
         }
     }
 
-    /// Re-run `block` to pick up changed settings (e.g. the DoH toggle) without
-    /// flipping state. Cheap and idempotent: HostsFile.apply rewrites the marker
-    /// section in place. No-op if the block isn't active.
+    /// Re-run `block` to pick up changed settings without flipping state. No-op
+    /// if the block isn't active. Idempotent: HostsFile.apply rewrites the
+    /// marker section in place.
     static func reapplyBlock() {
         guard HostsFile.isActive() else { return }
-        var args = ["-n", Paths.selfExecutable.path, "block"]
-        if !Defaults.blockDoHEndpoints { args.append("--no-block-doh") }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        p.arguments = args
-        p.standardInput = FileHandle.nullDevice
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        p.terminationHandler = { proc in
-            guard proc.terminationStatus != 0 else { return }
-            Task { @MainActor in showSudoersMissingAlert() }
-        }
-        do {
-            try p.run()
-        } catch {
-            log.error("reapply failed to launch: \(error.localizedDescription, privacy: .public)")
-        }
+        spawnSudo(["block"] + Defaults.dohSuppressionFlags)
     }
 
     // MARK: Music

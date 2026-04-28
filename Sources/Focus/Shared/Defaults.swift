@@ -44,4 +44,11 @@ enum Defaults {
         get { UserDefaults.standard.object(forKey: dohKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: dohKey) }
     }
+
+    /// Argv suffix for `block` / `toggle` reflecting the current DoH preference.
+    /// Single source of truth for the flag string — keep in sync with
+    /// BlockCommands and the sudoers drop-in.
+    static var dohSuppressionFlags: [String] {
+        blockDoHEndpoints ? [] : ["--no-block-doh"]
+    }
 }
