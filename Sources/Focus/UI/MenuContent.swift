@@ -6,11 +6,14 @@ struct MenuContent: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        // Note: no `keyboardShortcut(...)` on the action buttons — those would
+        // render as ⌘-equivalents in the menu and imply a global hotkey that
+        // doesn't actually exist. Real global bindings are configured in
+        // Settings → Shortcuts and handled by the KeyboardShortcuts library.
         if state.isRunning {
             pomodoroSection
         } else {
             Button("Start pomodoro…") { Actions.promptAndStartPomodoro() }
-                .keyboardShortcut("o")
         }
 
         Divider()
@@ -18,7 +21,6 @@ struct MenuContent: View {
         Button(state.blockActive ? "Unblock websites" : "Block websites") {
             Actions.toggleBlock()
         }
-        .keyboardShortcut("b")
 
         Menu("Music") {
             ForEach(MusicPresets.list, id: \.name) { preset in
@@ -52,7 +54,6 @@ struct MenuContent: View {
             Text(state.phase == .break ? "Break — \(formatCountdown(state.timeLeft))"
                                        : "\(p.goal) — \(formatCountdown(state.timeLeft))")
             Button("Stop pomodoro") { Actions.stopPomodoro() }
-                .keyboardShortcut("o")
         }
     }
 }
