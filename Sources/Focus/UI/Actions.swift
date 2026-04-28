@@ -55,8 +55,42 @@ enum Actions {
 
     // MARK: Block
 
+    /// Toggle the website block and post a system notification with the new
+    /// state so the click has visible effect (the menu bar icon also changes,
+    /// but only after AppState's next 1Hz refresh).
     static func toggleBlock() {
-        spawnSudo(["toggle"])
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        p.arguments = ["-n", Paths.selfExecutable.path, "toggle", "--json"]
+        p.standardInput = FileHandle.nullDevice
+        let outPipe = Pipe()
+        p.standardOutput = outPipe
+        p.standardError = FileHandle.nullDevice
+        p.terminationHandler = { proc in
+            if proc.terminationStatus != 0 {
+                Task { @MainActor in showSudoersMissingAlert() }
+                return
+            }
+            let stdout = String(
+                data: outPipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            ) ?? ""
+            let active = stdout.contains("\"active\": true")
+            Task { @MainActor in
+                Notifier.post(
+                    title: active ? "Websites blocked" : "Websites unblocked",
+                    body: active
+                        ? "Distraction list is active."
+                        : "Distractions are reachable again."
+                )
+            }
+        }
+        do {
+            try p.run()
+        } catch {
+            log.error("toggle failed to launch: \(error.localizedDescription, privacy: .public)")
+            showSudoersMissingAlert()
+        }
     }
 
     // MARK: Music
