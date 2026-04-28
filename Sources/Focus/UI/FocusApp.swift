@@ -34,18 +34,23 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate {
 /// Menu bar icon + optional countdown label.
 ///
 /// The per-second countdown is driven by `TimelineView` so its updates stay
-/// scoped to this subtree. If we drove it from `@Published` properties on
-/// `AppState`, every tick would also re-render `MenuContent`, resetting
-/// AppKit's hover selection in the dropdown.
+/// scoped to a small subtree (otherwise re-renders would also rebuild
+/// `MenuContent` and reset AppKit's hover selection).
+///
+/// Critically: the SF-Symbol `Image` lives OUTSIDE the TimelineView. Earlier
+/// the whole HStack was inside, so a fresh `Image(systemName:)` was created
+/// each second, which `NSStatusBar.setImage` accumulated without freeing —
+/// the app climbed to ~40 GB resident memory and froze. Only the `Text`
+/// rebuilds on each tick now.
 struct StatusLabel: View {
     @ObservedObject var state: AppState
 
     var body: some View {
         if let pomodoro = state.pomodoro, state.isRunning {
-            TimelineView(.periodic(from: .now, by: 1.0)) { ctx in
-                let (phase, timeLeft) = pomodoro.phase(at: ctx.date.timeIntervalSince1970)
-                HStack(spacing: 4) {
-                    Image(systemName: phase == .break ? "cup.and.saucer.fill" : "timer")
+            HStack(spacing: 4) {
+                Image(systemName: state.phase == .break ? "cup.and.saucer.fill" : "timer")
+                TimelineView(.periodic(from: .now, by: 1.0)) { ctx in
+                    let (_, timeLeft) = pomodoro.phase(at: ctx.date.timeIntervalSince1970)
                     Text(formatCountdown(timeLeft)).monospacedDigit()
                 }
             }
