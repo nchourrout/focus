@@ -7,7 +7,7 @@
 A macOS menu bar app + CLI to get in the zone.
 
 - **Block distracting websites** by editing `/etc/hosts`
-- **Play focus music** from free, ad-free [SomaFM](https://somafm.com) streams (Drone Zone, Groove Salad, Mission Control, …) — or a Spotify URI / local audio file
+- **Play focus music** from free, ad-free [SomaFM](https://somafm.com) streams (Drone Zone, Groove Salad, Mission Control, …) — or any HTTP(S) audio stream URL, or a local audio file
 - **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up automatically
 - **Global hotkeys** for start/stop pomodoro and toggle block, configurable in Settings
 - **Launch at login** toggle via `SMAppService`
@@ -57,10 +57,8 @@ sudo focus unblock               # remove the block
 sudo focus toggle --json         # toggle; emits the new state
 
 focus music --list               # built-in SomaFM streams
-focus music groovesalad          # stream a preset (no Spotify needed)
+focus music groovesalad          # stream a preset
 focus music https://stream.url   # any HTTP(S) audio stream
-focus music spotify:track:X      # Spotify track (plays immediately)
-focus music spotify:playlist:X   # Spotify playlist (navigates; press Play)
 focus music --file ~/brown.mp3 --loop
 focus music --stop
 
@@ -71,10 +69,10 @@ focus pomodoro stop
 ```
 
 **Music sources**:
-- **HTTP(S) streams** (built-in SomaFM presets, or any direct stream URL) play immediately via AVPlayer in a detached subprocess.
-- **Spotify track URIs** auto-play via AppleScript.
-- **Spotify playlist/album URIs** can't auto-play — Spotify's AppleScript only switches playback context for tracks, and we don't ship Web API OAuth. Focus navigates Spotify to the playlist; press Play (or spacebar) to start.
-- **Local audio files** play via `afplay`, with optional `--loop`.
+- **HTTP(S) streams** — built-in SomaFM presets, or any direct stream URL. Played via `AVPlayer` in a detached subprocess.
+- **Local audio files** — `--file PATH`, with optional `--loop`. Played via `afplay`.
+
+Set `FOCUS_MUSIC_URI` in your shell to a default URL for `focus music` with no args.
 
 ## Sudoers (system permission)
 

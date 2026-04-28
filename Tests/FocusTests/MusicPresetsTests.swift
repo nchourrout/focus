@@ -10,23 +10,22 @@ import Testing
     @Test func resolvePrecedence() throws {
         // Explicit --uri wins over a preset name.
         #expect(
-            try MusicPresets.resolve(target: "groovesalad", explicitURI: "spotify:track:X")
-            == "spotify:track:X"
+            try MusicPresets.resolve(target: "groovesalad", explicitURI: "https://example.com/x")
+            == "https://example.com/x"
         )
         // Preset name resolves to its URI.
         #expect(
             try MusicPresets.resolve(target: "dronezone", explicitURI: nil)
             == MusicPresets.uri(for: "dronezone")
         )
-        // Spotify URIs pass through untouched.
-        #expect(
-            try MusicPresets.resolve(target: "spotify:album:Y", explicitURI: nil)
-            == "spotify:album:Y"
-        )
         // HTTP(S) stream URLs pass through untouched.
         #expect(
             try MusicPresets.resolve(target: "https://example.com/stream.mp3", explicitURI: nil)
             == "https://example.com/stream.mp3"
+        )
+        #expect(
+            try MusicPresets.resolve(target: "http://radio.example/foo", explicitURI: nil)
+            == "http://radio.example/foo"
         )
         // Unknown bare names throw.
         #expect(throws: MusicPresets.ResolveError.self) {

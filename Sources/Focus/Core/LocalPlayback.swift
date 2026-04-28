@@ -6,22 +6,23 @@ import Darwin
 /// involved on the hot path, so filenames with metacharacters are safe.
 enum LocalPlayback {
     static func start(path: URL, loop: Bool) throws {
-        stop()
         let (exe, args): (URL, [String]) = loop
             ? (Paths.selfExecutable, ["_afplay-loop", "--file", path.path])
             : (URL(fileURLWithPath: "/usr/bin/afplay"), [path.path])
-        let p = try Subprocess.launchSilent(exe, args)
-        try String(p.processIdentifier).write(to: Paths.musicPid, atomically: true, encoding: .utf8)
+        try launch(exe, args)
     }
 
     /// Launch a detached `_stream-play` subprocess to play an HTTP audio stream.
     /// Tracked via the same PID file as afplay, so `stop()` works for both.
     static func startStream(url: String) throws {
+        try launch(Paths.selfExecutable, ["_stream-play", "--url", url])
+    }
+
+    /// Stop any current playback, then start the new one and record its PID so
+    /// `stop()` can reach it later regardless of which mode it's in.
+    private static func launch(_ executable: URL, _ arguments: [String]) throws {
         stop()
-        let p = try Subprocess.launchSilent(
-            Paths.selfExecutable,
-            ["_stream-play", "--url", url]
-        )
+        let p = try Subprocess.launchSilent(executable, arguments)
         try String(p.processIdentifier).write(to: Paths.musicPid, atomically: true, encoding: .utf8)
     }
 

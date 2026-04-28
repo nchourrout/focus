@@ -1,11 +1,8 @@
 import Foundation
 
 /// Curated focus streams from SomaFM (https://somafm.com) — listener-supported,
-/// no ads, no account, no Spotify required. AVPlayer drives them in a detached
-/// subprocess (`_stream-play`).
-///
-/// Spotify URIs (spotify:playlist:..., spotify:track:...) are still accepted
-/// when passed directly via the positional argument or `--uri`.
+/// no ads, no account required. AVPlayer drives them in a detached subprocess
+/// (`_stream-play`).
 enum MusicPresets {
     static let list: [(name: String, uri: String)] = [
         ("dronezone",      "https://ice4.somafm.com/dronezone-128-mp3"),       // Ambient drift
@@ -21,18 +18,16 @@ enum MusicPresets {
 
     static var names: [String] { list.map { $0.name } }
 
-    /// Precedence: explicit URI > target (preset name, spotify: URI, or http(s):// stream) > FOCUS_SPOTIFY_URI env.
+    /// Precedence: explicit URI > target (preset name or http(s):// stream) > FOCUS_MUSIC_URI env.
     /// Returns nil if nothing resolvable; throws if target looks like a preset name but isn't one.
     static func resolve(target: String?, explicitURI: String?) throws -> String? {
         if let uri = explicitURI, !uri.isEmpty { return uri }
         if let t = target, !t.isEmpty {
             if let uri = uri(for: t) { return uri }
-            if t.hasPrefix("spotify:") || t.hasPrefix("http://") || t.hasPrefix("https://") {
-                return t
-            }
+            if t.hasPrefix("http://") || t.hasPrefix("https://") { return t }
             throw ResolveError.unknownPreset(t)
         }
-        let env = ProcessInfo.processInfo.environment["FOCUS_SPOTIFY_URI"] ?? ""
+        let env = ProcessInfo.processInfo.environment["FOCUS_MUSIC_URI"] ?? ""
         return env.isEmpty ? nil : env
     }
 
@@ -41,7 +36,7 @@ enum MusicPresets {
         var errorDescription: String? {
             switch self {
             case .unknownPreset(let name):
-                return "focus: unknown preset '\(name)'. Available: \(MusicPresets.names.joined(separator: ", ")). Or pass a spotify:... URI."
+                return "focus: unknown preset '\(name)'. Available: \(MusicPresets.names.joined(separator: ", ")). Or pass an http(s):// stream URL."
             }
         }
     }

@@ -36,7 +36,6 @@ struct Music: ParsableCommand {
         }
 
         if stop {
-            Spotify.pause()
             LocalPlayback.stop()
             print("focus: music stopped")
             return
@@ -52,26 +51,11 @@ struct Music: ParsableCommand {
         guard let resolved = try MusicPresets.resolve(target: target, explicitURI: uri) else {
             throw CLIError.missingMusicSource
         }
-
-        if resolved.hasPrefix("http://") || resolved.hasPrefix("https://") {
-            try LocalPlayback.startStream(url: resolved)
-            print("focus: streaming \(resolved)")
-            return
+        guard resolved.hasPrefix("http://") || resolved.hasPrefix("https://") else {
+            throw ValidationError("expected an http(s):// stream URL, got: \(resolved)")
         }
-
-        if resolved.hasPrefix("spotify:") {
-            switch Spotify.play(uri: resolved) {
-            case .playing:
-                print("focus: playing \(resolved)")
-            case .opened:
-                print("focus: opened \(resolved) in Spotify — press Play to start")
-            case .failed:
-                FocusCLI.exit(withError: ExitCode(1))
-            }
-            return
-        }
-
-        FocusCLI.exit(withError: ExitCode(1))
+        try LocalPlayback.startStream(url: resolved)
+        print("focus: streaming \(resolved)")
     }
 }
 
