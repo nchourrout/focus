@@ -11,21 +11,25 @@ struct PomodoroState: Codable {
     let breakEnd: TimeInterval
     /// nil internally; serialized as "" to stay compatible with the Python schema.
     var music: String?
+    /// Whether the daemon should block /etc/hosts for the duration of the session.
+    /// Defaults to true on decode for older state files written before this field.
+    var block: Bool
 
     enum CodingKeys: String, CodingKey {
-        case goal, pid, music
+        case goal, pid, music, block
         case startedAt = "started_at"
         case workEnd = "work_end"
         case breakEnd = "break_end"
     }
 
-    init(goal: String, pid: Int32, startedAt: TimeInterval, workEnd: TimeInterval, breakEnd: TimeInterval, music: String?) {
+    init(goal: String, pid: Int32, startedAt: TimeInterval, workEnd: TimeInterval, breakEnd: TimeInterval, music: String?, block: Bool) {
         self.goal = goal
         self.pid = pid
         self.startedAt = startedAt
         self.workEnd = workEnd
         self.breakEnd = breakEnd
         self.music = music
+        self.block = block
     }
 
     init(from decoder: Decoder) throws {
@@ -37,6 +41,7 @@ struct PomodoroState: Codable {
         breakEnd = try c.decode(TimeInterval.self, forKey: .breakEnd)
         let raw = try c.decodeIfPresent(String.self, forKey: .music) ?? ""
         music = raw.isEmpty ? nil : raw
+        block = try c.decodeIfPresent(Bool.self, forKey: .block) ?? true
     }
 
     func encode(to encoder: Encoder) throws {
@@ -47,6 +52,7 @@ struct PomodoroState: Codable {
         try c.encode(workEnd, forKey: .workEnd)
         try c.encode(breakEnd, forKey: .breakEnd)
         try c.encode(music ?? "", forKey: .music)
+        try c.encode(block, forKey: .block)
     }
 
     enum Phase: String {

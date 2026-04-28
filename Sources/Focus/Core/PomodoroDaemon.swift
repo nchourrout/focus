@@ -5,7 +5,7 @@ enum PomodoroDaemon {
     /// Launch a new pomodoro. Writes state, forks a detached `_pomodoro-run` child,
     /// backfills the PID into the state file, and returns. Recovers from a stale
     /// state file (dead PID) by clearing and proceeding.
-    static func launch(goal: String, workMinutes: Int, breakMinutes: Int, music: String?) throws {
+    static func launch(goal: String, workMinutes: Int, breakMinutes: Int, music: String?, block: Bool) throws {
         if let existing = PomodoroState.current {
             // Verify the PID is both alive *and* actually our daemon, to guard against
             // PID recycling (a long-running process reusing the dead daemon's PID).
@@ -13,7 +13,9 @@ enum PomodoroDaemon {
                 throw CLIError.alreadyRunning
             }
             print("focus: clearing stale pomodoro state from previous session")
-            clearEverything()
+            // Use the prior session's block flag — if it was running with --no-block,
+            // there's nothing to unblock.
+            clearEverything(unblock: existing.block)
         }
 
         let now = Date().timeIntervalSince1970
@@ -34,11 +36,12 @@ enum PomodoroDaemon {
         if let music = musicURI {
             args.append(contentsOf: ["--music", music])
         }
+        if !block { args.append("--no-block") }
         let p = try Subprocess.launchSilent(Paths.selfExecutable, args)
 
         let state = PomodoroState(
             goal: goal, pid: p.processIdentifier, startedAt: now,
-            workEnd: workEnd, breakEnd: breakEnd, music: musicURI
+            workEnd: workEnd, breakEnd: breakEnd, music: musicURI, block: block
         )
         try state.save()
 
@@ -52,15 +55,19 @@ enum PomodoroDaemon {
     /// - We do NOT install a SIGTERM handler. Default behavior is to terminate, which
     ///   means cleanup on interruption is the responsibility of `pomodoro stop`'s fallback
     ///   path. Normal completion cleans up explicitly at the end of this function.
-    static func runDaemon(goal: String, workEnd: Double, breakEnd: Double, music: String?) {
+    static func runDaemon(goal: String, workEnd: Double, breakEnd: Double, music: String?, block: Bool) {
         signal(SIGHUP, SIG_IGN)
         _ = Darwin.setsid()
 
-        let blocked = Subprocess.run("/usr/bin/sudo", ["-n", Paths.selfExecutable.path, "block"]) == 0
-        if !blocked {
-            // User will see the parenthetical in the notification, but anyone running the
-            // daemon in the foreground (or tailing stderr) deserves a clearer signal.
-            FileHandle.standardError.write(Data("focus: warning — sudo -n block failed. Is /etc/sudoers.d/focus installed?\n".utf8))
+        var blockFailed = false
+        if block {
+            let blocked = Subprocess.run("/usr/bin/sudo", ["-n", Paths.selfExecutable.path, "block"]) == 0
+            if !blocked {
+                blockFailed = true
+                FileHandle.standardError.write(Data(
+                    "focus: warning — sudo -n block failed. Is /etc/sudoers.d/focus installed?\n".utf8
+                ))
+            }
         }
 
         if let music = music, !music.isEmpty {
@@ -71,7 +78,7 @@ enum PomodoroDaemon {
         // status uses a period separator rather than a newline.
         Notifier.post(
             title: "Pomodoro started",
-            body: goal + (blocked ? "" : ". Couldn't block websites.")
+            body: goal + (blockFailed ? ". Couldn't block websites." : "")
         )
 
         sleepUntil(workEnd)
@@ -80,7 +87,7 @@ enum PomodoroDaemon {
         sleepUntil(breakEnd)
         Notifier.post(title: "Break over", body: "Ready for another session?")
 
-        clearEverything()
+        clearEverything(unblock: block)
     }
 
     static func stop() {
@@ -99,12 +106,16 @@ enum PomodoroDaemon {
             }
         }
         // Daemon doesn't clean up on SIGTERM (no handler), so do it here.
-        clearEverything()
+        // Only unblock if the session asked us to block in the first place — sparing
+        // a sudo -n call (and the matching sudoers prompt if it weren't installed).
+        clearEverything(unblock: state.block)
         print("focus: pomodoro stopped")
     }
 
-    private static func clearEverything() {
-        _ = Subprocess.run("/usr/bin/sudo", ["-n", Paths.selfExecutable.path, "unblock"])
+    private static func clearEverything(unblock: Bool) {
+        if unblock {
+            _ = Subprocess.run("/usr/bin/sudo", ["-n", Paths.selfExecutable.path, "unblock"])
+        }
         // Music doesn't need root; call Core directly instead of forking the CLI.
         LocalPlayback.stop()
         PomodoroState.clearFile()

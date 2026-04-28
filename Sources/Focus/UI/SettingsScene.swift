@@ -32,10 +32,13 @@ private struct GeneralTab: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Pomodoro duration").font(.headline)
+                Text("Pomodoro").font(.headline)
                 HStack(spacing: 16) {
                     Stepper("Work \(workMinutes) min", value: workBinding, in: 1...180)
                     Stepper("Break \(breakMinutes) min", value: breakBinding, in: 1...60)
+                }
+                Toggle(isOn: blockDuringPomodoroBinding) {
+                    Text("Block websites during pomodoro")
                 }
             }
 
@@ -95,6 +98,13 @@ private struct GeneralTab: View {
         Binding(
             get: { Defaults.breakMinutes },
             set: { Defaults.breakMinutes = $0; refreshTick += 1 }
+        )
+    }
+
+    private var blockDuringPomodoroBinding: Binding<Bool> {
+        Binding(
+            get: { _ = refreshTick; return Defaults.blockDuringPomodoro },
+            set: { Defaults.blockDuringPomodoro = $0; refreshTick += 1 }
         )
     }
 

@@ -25,4 +25,13 @@ enum Defaults {
             UserDefaults.standard.set(max(1, newValue), forKey: breakKey)
         }
     }
+
+    private static let blockKey = "blockDuringPomodoro"
+
+    static var blockDuringPomodoro: Bool {
+        // Use object(forKey:) so an unset key reads as the default (true), not
+        // false (which is what UserDefaults.bool returns on absence).
+        get { UserDefaults.standard.object(forKey: blockKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: blockKey) }
+    }
 }

@@ -37,6 +37,9 @@ enum Actions {
             "--work", String(Defaults.workMinutes),
             "--break", String(Defaults.breakMinutes),
         ]
+        if !Defaults.blockDuringPomodoro {
+            args.append("--no-block")
+        }
         if let music = music, !music.isEmpty {
             args.append(contentsOf: ["--music", music])
         }

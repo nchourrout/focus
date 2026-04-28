@@ -28,6 +28,11 @@ extension Pomodoro {
         @Option(help: "Music preset or http(s):// stream URL (default FOCUS_MUSIC_URI)")
         var music: String?
 
+        @Flag(inversion: .prefixedNo,
+              exclusivity: .exclusive,
+              help: "Block websites for the duration of the session (default: yes)")
+        var block: Bool = true
+
         func validate() throws {
             if work <= 0 {
                 throw ValidationError("--work must be a positive integer")
@@ -39,7 +44,11 @@ extension Pomodoro {
 
         func run() throws {
             try PomodoroDaemon.launch(
-                goal: goal, workMinutes: work, breakMinutes: breakMinutes, music: music
+                goal: goal,
+                workMinutes: work,
+                breakMinutes: breakMinutes,
+                music: music,
+                block: block
             )
         }
     }
@@ -116,8 +125,15 @@ struct PomodoroRun: ParsableCommand {
     @Option(name: .customLong("work-end")) var workEnd: Double
     @Option(name: .customLong("break-end")) var breakEnd: Double
     @Option var music: String?
+    @Flag(inversion: .prefixedNo) var block: Bool = true
 
     func run() {
-        PomodoroDaemon.runDaemon(goal: goal, workEnd: workEnd, breakEnd: breakEnd, music: music)
+        PomodoroDaemon.runDaemon(
+            goal: goal,
+            workEnd: workEnd,
+            breakEnd: breakEnd,
+            music: music,
+            block: block
+        )
     }
 }
