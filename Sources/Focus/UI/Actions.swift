@@ -43,6 +43,16 @@ enum Actions {
         spawn(["pomodoro", "stop"])
     }
 
+    /// Single-shortcut affordance: stop if a session is running, otherwise prompt
+    /// for a goal and start one.
+    static func togglePomodoro() {
+        if PomodoroState.current != nil {
+            stopPomodoro()
+        } else {
+            promptAndStartPomodoro()
+        }
+    }
+
     // MARK: Block
 
     static func toggleBlock() {

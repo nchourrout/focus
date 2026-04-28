@@ -85,8 +85,7 @@ private struct GeneralTab: View {
 private struct ShortcutsTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            KeyboardShortcuts.Recorder("Start pomodoro", name: .startPomodoro)
-            KeyboardShortcuts.Recorder("Stop pomodoro", name: .stopPomodoro)
+            KeyboardShortcuts.Recorder("Start / stop pomodoro", name: .togglePomodoro)
             KeyboardShortcuts.Recorder("Toggle website block", name: .toggleBlock)
             Spacer()
         }
