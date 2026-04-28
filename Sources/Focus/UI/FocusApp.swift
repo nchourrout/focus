@@ -12,9 +12,13 @@ struct FocusApp: App {
         }
         .menuBarExtraStyle(.menu)
 
-        Settings {
+        // A standalone Window (instead of the Settings scene) — the standard
+        // Settings scene's window doesn't reliably show for LSUIElement menu
+        // bar apps; openWindow(id:) works.
+        Window("Focus Settings", id: "settings") {
             SettingsContent()
         }
+        .windowResizability(.contentSize)
     }
 }
 

@@ -3,6 +3,7 @@ import AppKit
 
 struct MenuContent: View {
     @ObservedObject var state: AppState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         if state.isRunning {
@@ -31,17 +32,12 @@ struct MenuContent: View {
 
         Divider()
 
-        // SettingsLink (macOS 14+) doesn't reliably open the Settings scene from a
-        // MenuBarExtra in an LSUIElement (accessory) app — the scene gets created
-        // but the window never comes forward. Activating + dispatching
-        // showSettingsWindow: works on both 13 and 14+.
+        // The standard Settings scene doesn't show its window for LSUIElement
+        // menu bar apps. We use a regular Window scene (id: "settings") and
+        // open it via the SwiftUI environment action.
         Button("Settings…") {
             NSApp.activate(ignoringOtherApps: true)
-            if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
-                return
-            }
-            // Older selector name used pre-macOS 13.
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+            openWindow(id: "settings")
         }
         .keyboardShortcut(",")
 
