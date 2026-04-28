@@ -76,6 +76,20 @@ import Testing
                 == base.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    /// `extraExactDomains` should yield bare IPv4 + IPv6 entries for each domain,
+    /// without the www. variant. Used for DNS-over-HTTPS resolver hostnames where
+    /// `www.dns.google` etc. are not real endpoints.
+    @Test func applyEmitsExactExtraDomainsOnly() throws {
+        let entries = ["dns.google", "cloudflare-dns.com"]
+        let output = HostsFile.renderBlock(sites: [], extraExactDomains: entries)
+        #expect(output.contains("127.0.0.1 dns.google\n"))
+        #expect(output.contains("::1 dns.google\n"))
+        #expect(output.contains("127.0.0.1 cloudflare-dns.com\n"))
+        #expect(output.contains("::1 cloudflare-dns.com\n"))
+        #expect(!output.contains("www.dns.google"), "extras must not get a www. variant")
+        #expect(!output.contains("www.cloudflare-dns.com"))
+    }
+
     @Test func stripRefusesToDropContentOnUnmatchedStart() {
         // An unmatched START (no END) used to silently drop the remainder of the file.
         // Now we return the input unchanged rather than mangle /etc/hosts.

@@ -6,7 +6,11 @@ import Foundation
     @Test func ruleContainsEachSubcommandAgainstRunningBinary() throws {
         let rule = try SudoersInstaller.renderRule()
         let bin = Paths.selfExecutable.path
-        for sub in ["block", "unblock", "toggle", "toggle --json"] {
+        for sub in [
+            "block", "block --no-block-doh",
+            "unblock",
+            "toggle", "toggle --json", "toggle --json --no-block-doh",
+        ] {
             #expect(rule.contains("\(bin) \(sub)"), "rule should whitelist `\(sub)` against \(bin)")
         }
         #expect(rule.hasPrefix(NSUserName()), "rule's first token must be the username at column 0")

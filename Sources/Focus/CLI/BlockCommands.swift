@@ -10,6 +10,10 @@ struct Block: ParsableCommand {
     @Option(name: [.short, .customLong("file")], help: "Custom block list path.")
     var file: String?
 
+    @Flag(inversion: .prefixedNo,
+          help: "Also blackhole common DNS-over-HTTPS endpoints so browsers fall back to the system resolver.")
+    var blockDoh: Bool = true
+
     func run() throws {
         try requireRoot()
         let url = try resolveBlockFile(file)
@@ -17,7 +21,10 @@ struct Block: ParsableCommand {
         if sites.isEmpty {
             throw CLIError.emptyBlockList(url)
         }
-        let count = try HostsFile.apply(sites: sites)
+        let count = try HostsFile.apply(
+            sites: sites,
+            extraExactDomains: blockDoh ? DoHBlocklist.endpoints : []
+        )
         print("focus: blocked \(count) sites")
     }
 }
@@ -47,6 +54,10 @@ struct ToggleCommand: ParsableCommand {
     @Flag(name: .customLong("json"), help: "Machine-readable output.")
     var json: Bool = false
 
+    @Flag(inversion: .prefixedNo,
+          help: "Also blackhole common DNS-over-HTTPS endpoints so browsers fall back to the system resolver.")
+    var blockDoh: Bool = true
+
     func run() throws {
         try requireRoot()
         let nowActive: Bool
@@ -57,7 +68,10 @@ struct ToggleCommand: ParsableCommand {
             let url = try resolveBlockFile(file)
             let sites = try BlockList.load(from: url)
             if sites.isEmpty { throw CLIError.emptyBlockList(url) }
-            try HostsFile.apply(sites: sites)
+            try HostsFile.apply(
+                sites: sites,
+                extraExactDomains: blockDoh ? DoHBlocklist.endpoints : []
+            )
             nowActive = true
         }
         if json {

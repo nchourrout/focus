@@ -45,6 +45,18 @@ private struct GeneralTab: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
+                Toggle(isOn: blockDoHBinding) {
+                    Text("Block DNS-over-HTTPS endpoints")
+                }
+                Text("Forces browsers with Secure DNS enabled to fall back to the system resolver, so site blocks aren't bypassed. Disable if you rely on Cloudflare WARP or iCloud Private Relay.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Image(systemName: permissionInstalled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(permissionInstalled ? .green : .orange)
@@ -105,6 +117,19 @@ private struct GeneralTab: View {
         Binding(
             get: { _ = refreshTick; return Defaults.blockDuringPomodoro },
             set: { Defaults.blockDuringPomodoro = $0; refreshTick += 1 }
+        )
+    }
+
+    private var blockDoHBinding: Binding<Bool> {
+        Binding(
+            get: { _ = refreshTick; return Defaults.blockDoHEndpoints },
+            set: {
+                Defaults.blockDoHEndpoints = $0
+                refreshTick += 1
+                // If the block is currently active, push the new setting through
+                // to /etc/hosts immediately rather than waiting for the next toggle.
+                Actions.reapplyBlock()
+            }
         )
     }
 

@@ -53,17 +53,29 @@ enum HostsFile {
         try content.write(to: Paths.hostsBackup, atomically: true, encoding: .utf8)
     }
 
-    /// Install block entries. Each site gets both the bare and www. variants.
-    /// Requires root. Flushes DNS on success. Returns the number of sites blocked.
+    /// Install block entries. Each site in `sites` gets bare + www. variants in
+    /// both IPv4 and IPv6. `extraExactDomains` are blackholed too but without
+    /// the www. variant — used for DNS-over-HTTPS endpoints that should match
+    /// exactly what the browser would query.
+    /// Requires root. Flushes DNS on success. Returns the number of entries
+    /// (sites + extras) installed.
     @discardableResult
-    static func apply(sites: [String]) throws -> Int {
-        guard !sites.isEmpty else { return 0 }
+    static func apply(sites: [String], extraExactDomains: [String] = []) throws -> Int {
+        guard !sites.isEmpty || !extraExactDomains.isEmpty else { return 0 }
         try backupOnce()
         let cleaned = strip(try read())
-        // Write both IPv4 and IPv6 loopback entries. Without ::1, macOS's
-        // Happy Eyeballs resolver still hands real IPv6 DNS answers to apps
-        // and the block is silently bypassed for sites that have AAAA records
-        // (every modern site).
+        try write(cleaned + renderBlock(sites: sites, extraExactDomains: extraExactDomains))
+        DNS.flush()
+        return sites.count + extraExactDomains.count
+    }
+
+    /// Pure helper: render the marker-delimited block section as a single string
+    /// (with trailing newline). Exposed for tests; called by `apply`.
+    ///
+    /// Both IPv4 and IPv6 loopback entries are emitted. Without `::1`, macOS's
+    /// Happy Eyeballs resolver still hands real IPv6 DNS answers to apps and the
+    /// block is silently bypassed for sites with AAAA records.
+    static func renderBlock(sites: [String], extraExactDomains: [String]) -> String {
         var entries = [markerStart]
         for site in sites {
             entries.append("\(redirectIP) \(site)")
@@ -71,10 +83,12 @@ enum HostsFile {
             entries.append("\(redirectIP) www.\(site)")
             entries.append("\(redirectIPv6) www.\(site)")
         }
+        for domain in extraExactDomains {
+            entries.append("\(redirectIP) \(domain)")
+            entries.append("\(redirectIPv6) \(domain)")
+        }
         entries.append(markerEnd)
-        try write(cleaned + entries.joined(separator: "\n") + "\n")
-        DNS.flush()
-        return sites.count
+        return entries.joined(separator: "\n") + "\n"
     }
 
     /// Remove the block section. Requires root.

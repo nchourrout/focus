@@ -44,9 +44,11 @@ enum SudoersInstaller {
         return """
         \(user) ALL=(root) NOPASSWD: \\
             \(bin) block, \\
+            \(bin) block --no-block-doh, \\
             \(bin) unblock, \\
             \(bin) toggle, \\
-            \(bin) toggle --json
+            \(bin) toggle --json, \\
+            \(bin) toggle --json --no-block-doh
         """
     }
 

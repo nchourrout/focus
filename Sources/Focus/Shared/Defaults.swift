@@ -34,4 +34,14 @@ enum Defaults {
         get { UserDefaults.standard.object(forKey: blockKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: blockKey) }
     }
+
+    private static let dohKey = "blockDoHEndpoints"
+
+    /// When on, block/toggle also blackhole common DNS-over-HTTPS endpoints so
+    /// browsers configured with "Secure DNS" fall back to the OS resolver
+    /// (which honours /etc/hosts). Default on.
+    static var blockDoHEndpoints: Bool {
+        get { UserDefaults.standard.object(forKey: dohKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: dohKey) }
+    }
 }
