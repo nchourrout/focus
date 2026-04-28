@@ -6,7 +6,7 @@ import Foundation
     @Test func jsonKeysMatchPythonSchema() throws {
         let state = PomodoroState(
             goal: "test", pid: 1234, startedAt: 1000,
-            workEnd: 2500, breakEnd: 2800, music: "https://example.com/stream.mp3"
+            workEnd: 2500, breakEnd: 2800, music: "https://example.com/stream.mp3", block: true
         )
         let data = try JSONEncoder().encode(state)
         let obj = try #require(
@@ -22,7 +22,7 @@ import Foundation
 
     @Test func roundtripDecode() throws {
         let state = PomodoroState(
-            goal: "g", pid: 42, startedAt: 1, workEnd: 2, breakEnd: 3, music: ""
+            goal: "g", pid: 42, startedAt: 1, workEnd: 2, breakEnd: 3, music: "", block: true
         )
         let data = try JSONEncoder().encode(state)
         let decoded = try JSONDecoder().decode(PomodoroState.self, from: data)
@@ -32,7 +32,7 @@ import Foundation
     }
 
     @Test func phaseLogic() {
-        let s = PomodoroState(goal: "", pid: 0, startedAt: 0, workEnd: 100, breakEnd: 200, music: "")
+        let s = PomodoroState(goal: "", pid: 0, startedAt: 0, workEnd: 100, breakEnd: 200, music: "", block: true)
         #expect(s.phase(at: 50).phase == .work)
         #expect(s.phase(at: 50).timeLeft == 50)
         #expect(s.phase(at: 150).phase == .break)
