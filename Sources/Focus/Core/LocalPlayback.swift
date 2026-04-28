@@ -18,6 +18,19 @@ enum LocalPlayback {
         try launch(Paths.selfExecutable, ["_stream-play", "--url", url])
     }
 
+    /// One-call helper: resolve a preset name / URI and start playback. Used by
+    /// the menu bar app's music actions; the CLI's `MusicCommand.run` does the
+    /// equivalent inline because it needs different output messaging per case.
+    static func play(target: String) throws {
+        guard let uri = try MusicPresets.resolve(target: target, explicitURI: nil) else {
+            throw CLIError.missingMusicSource
+        }
+        guard uri.hasPrefix("http://") || uri.hasPrefix("https://") else {
+            throw MusicPresets.ResolveError.unknownPreset(target)
+        }
+        try startStream(url: uri)
+    }
+
     /// Stop any current playback, then start the new one and record its PID so
     /// `stop()` can reach it later regardless of which mode it's in.
     private static func launch(_ executable: URL, _ arguments: [String]) throws {

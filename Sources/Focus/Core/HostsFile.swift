@@ -30,11 +30,13 @@ enum HostsFile {
         var out: [String] = []
         var skipping = false
         // .newlines splits on \n, \r, and \r\n uniformly — no lingering \r on entries.
-        // Compare lines exactly to the marker so a comment that mentions the marker
-        // text (e.g. "# see FOCUS BLOCK START for details") doesn't trigger stripping.
+        // Compare each trimmed line to the marker so:
+        //   (1) a comment mentioning the marker text doesn't trigger stripping;
+        //   (2) trailing whitespace (editor artifact) on the marker line still matches.
         for line in content.components(separatedBy: .newlines) {
-            if line == markerStart { skipping = true; continue }
-            if line == markerEnd { skipping = false; continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == markerStart { skipping = true; continue }
+            if trimmed == markerEnd { skipping = false; continue }
             if !skipping { out.append(line) }
         }
         if skipping {

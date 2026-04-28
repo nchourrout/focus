@@ -68,14 +68,14 @@ enum PomodoroDaemon {
         }
 
         // sanitizeAppleScriptString rejects control characters, so the appended
-        // status uses an em-dash separator rather than a newline.
+        // status uses a period separator rather than a newline.
         Notifier.post(
             title: "Pomodoro started",
-            body: goal + (blocked ? "" : " — couldn't block websites")
+            body: goal + (blocked ? "" : ". Couldn't block websites.")
         )
 
         sleepUntil(workEnd)
-        Notifier.post(title: "Pomodoro complete", body: "Finished: \(goal) — break time.")
+        Notifier.post(title: "Pomodoro complete", body: "Finished: \(goal). Break time.")
 
         sleepUntil(breakEnd)
         Notifier.post(title: "Break over", body: "Ready for another session?")
@@ -105,7 +105,8 @@ enum PomodoroDaemon {
 
     private static func clearEverything() {
         _ = Subprocess.run("/usr/bin/sudo", ["-n", Paths.selfExecutable.path, "unblock"])
-        _ = Subprocess.run(Paths.selfExecutable.path, ["music", "--stop"])
+        // Music doesn't need root; call Core directly instead of forking the CLI.
+        LocalPlayback.stop()
         PomodoroState.clearFile()
     }
 

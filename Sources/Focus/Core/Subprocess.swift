@@ -54,19 +54,18 @@ enum Subprocess {
         p.standardError = err
         do {
             try p.run()
-            // Drain the pipe in the background so a noisy child can't block on
-            // a full pipe buffer (~64 KB on macOS) while we sit in waitUntilExit.
+            // Drain the pipe in the background so a noisy child can't block on a full
+            // pipe buffer (~64 KB on macOS) while we sit in waitUntilExit. The serial
+            // queue orders the async write before the sync read; the sync block also
+            // establishes a happens-before for the captured `Data`, avoiding a race.
             var collected = Data()
             let drainQueue = DispatchQueue(label: "focus.subprocess.stderr-drain")
-            let group = DispatchGroup()
-            group.enter()
             drainQueue.async {
                 collected = err.fileHandleForReading.readDataToEndOfFile()
-                group.leave()
             }
             p.waitUntilExit()
-            group.wait()
-            return (p.terminationStatus, String(data: collected, encoding: .utf8) ?? "")
+            let stderr = drainQueue.sync { collected }
+            return (p.terminationStatus, String(data: stderr, encoding: .utf8) ?? "")
         } catch {
             return (-1, "\(error)")
         }

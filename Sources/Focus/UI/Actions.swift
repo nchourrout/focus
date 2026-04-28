@@ -55,11 +55,7 @@ enum Actions {
     /// a CLI subprocess — saves a fork and lets us surface errors to the user.
     static func playMusic(_ preset: String) {
         do {
-            guard let uri = try MusicPresets.resolve(target: preset, explicitURI: nil) else {
-                log.error("playMusic: \(preset, privacy: .public) resolved to nothing")
-                return
-            }
-            try LocalPlayback.startStream(url: uri)
+            try LocalPlayback.play(target: preset)
         } catch {
             log.error("playMusic \(preset, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }

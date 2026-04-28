@@ -12,6 +12,7 @@ final class AppState: ObservableObject {
     @Published private(set) var blockActive: Bool = false
 
     private var timer: Timer?
+    private var refreshInFlight = false
 
     init() {
         Task { await refresh() }
@@ -29,7 +30,12 @@ final class AppState: ObservableObject {
 
     /// Read /etc/hosts and the pomodoro state file off the main thread so the
     /// menu bar doesn't stall on disk I/O, then publish changes back on @MainActor.
+    /// If the previous tick is still draining (slow disk, suspended laptop), skip
+    /// this one rather than letting refreshes accumulate and publish out of order.
     func refresh() async {
+        guard !refreshInFlight else { return }
+        refreshInFlight = true
+        defer { refreshInFlight = false }
         let snapshot = await Task.detached {
             (block: HostsFile.isActive(), state: PomodoroState.current)
         }.value
