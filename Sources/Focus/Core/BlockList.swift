@@ -22,6 +22,23 @@ enum BlockList {
     /// Parse a block file. Blank lines and `#`-prefixed comments are ignored. `www.` is
     /// stripped on input; both variants are added back at apply time by HostsFile.
     /// Throws `InvalidEntry` for any hostname that fails validation.
+    /// Make sure `~/Library/Application Support/Focus/block.txt` exists, seeding
+    /// it from the bundled default on first call. Returns the user path. The UI
+    /// calls this when opening the Block-list tab, so the file is created with
+    /// the user's permissions, not root's (relevant when CLI is later invoked
+    /// via sudo).
+    @discardableResult
+    static func ensureUserFile() throws -> URL {
+        let dest = Paths.userBlockList
+        let dir = dest.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: dest.path),
+           let bundled = Paths.defaultBlockFile {
+            try FileManager.default.copyItem(at: bundled, to: dest)
+        }
+        return dest
+    }
+
     static func load(from url: URL) throws -> [String] {
         let content = try String(contentsOf: url, encoding: .utf8)
         var sites = Set<String>()

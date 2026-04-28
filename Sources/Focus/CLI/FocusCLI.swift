@@ -36,9 +36,13 @@ func resolveExistingFile(_ path: String) throws -> URL {
 }
 
 /// Resolve the default or user-supplied block file path.
+/// Precedence: explicit `--file` > user-edited list > bundled default.
 func resolveBlockFile(_ override: String?) throws -> URL {
     if let override = override, !override.isEmpty {
         return try resolveExistingFile(override)
+    }
+    if FileManager.default.fileExists(atPath: Paths.userBlockList.path) {
+        return Paths.userBlockList
     }
     if let url = Paths.defaultBlockFile {
         return url

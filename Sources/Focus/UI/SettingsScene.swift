@@ -9,8 +9,11 @@ struct SettingsContent: View {
 
             ShortcutsTab()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+
+            BlockListTab()
+                .tabItem { Label("Block list", systemImage: "nosign") }
         }
-        .frame(width: 440, height: 260)
+        .frame(width: 480, height: 360)
     }
 }
 
@@ -91,5 +94,73 @@ private struct ShortcutsTab: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct BlockListTab: View {
+    @State private var content: String = ""
+    @State private var error: String?
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("One site per line. Lines starting with # are comments. www. is added automatically.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextEditor(text: $content)
+                .font(.system(.body, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .background(Color(NSColor.textBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.secondary.opacity(0.3))
+                )
+                .frame(minHeight: 200)
+
+            HStack {
+                if let error {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text(error).font(.caption).foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text("Saved. Changes take effect next time you toggle the block.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            load()
+        }
+        .onChange(of: content) { _ in save() }
+    }
+
+    private func load() {
+        do {
+            let url = try BlockList.ensureUserFile()
+            content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func save() {
+        do {
+            let url = try BlockList.ensureUserFile()
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            // Validate by re-parsing — surfaces invalid hostnames inline.
+            _ = try BlockList.load(from: url)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
