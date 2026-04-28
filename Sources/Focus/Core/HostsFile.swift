@@ -8,6 +8,7 @@ enum HostsFile {
     static let markerStart = "# === FOCUS BLOCK START ==="
     static let markerEnd = "# === FOCUS BLOCK END ==="
     static let redirectIP = "127.0.0.1"
+    static let redirectIPv6 = "::1"
 
     static func read() throws -> String {
         try String(contentsOf: Paths.hosts, encoding: .utf8)
@@ -59,10 +60,16 @@ enum HostsFile {
         guard !sites.isEmpty else { return 0 }
         try backupOnce()
         let cleaned = strip(try read())
+        // Write both IPv4 and IPv6 loopback entries. Without ::1, macOS's
+        // Happy Eyeballs resolver still hands real IPv6 DNS answers to apps
+        // and the block is silently bypassed for sites that have AAAA records
+        // (every modern site).
         var entries = [markerStart]
         for site in sites {
             entries.append("\(redirectIP) \(site)")
+            entries.append("\(redirectIPv6) \(site)")
             entries.append("\(redirectIP) www.\(site)")
+            entries.append("\(redirectIPv6) www.\(site)")
         }
         entries.append(markerEnd)
         try write(cleaned + entries.joined(separator: "\n") + "\n")
