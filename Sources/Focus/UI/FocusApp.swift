@@ -32,15 +32,18 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate {
 }
 
 /// Menu bar icon + optional countdown label. Updates every tick via AppState.
+/// Uses an explicit HStack instead of Label, because MenuBarExtra renders the
+/// label slot with a hidden-title style by default — the icon shows but the
+/// text gets dropped. HStack keeps both visible.
 struct StatusLabel: View {
     @ObservedObject var state: AppState
 
     var body: some View {
         if state.isRunning {
-            Label {
-                Text(formatCountdown(state.timeLeft))
-            } icon: {
+            HStack(spacing: 4) {
                 Image(systemName: state.phase == .break ? "cup.and.saucer.fill" : "timer")
+                Text(formatCountdown(state.timeLeft))
+                    .monospacedDigit()
             }
         } else {
             Image(systemName: state.blockActive ? "nosign" : "circle.dashed")

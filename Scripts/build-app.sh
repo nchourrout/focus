@@ -30,6 +30,25 @@ if [[ -d "$BIN_DIR/Focus_Focus.bundle" ]]; then
   cp -R "$BIN_DIR/Focus_Focus.bundle" "$APP/Contents/MacOS/"
 fi
 
+# Generate AppIcon.icns from the inline Swift renderer. Building a real
+# iconset (multiple sizes + @2x) so Finder, Dock, Launchpad, etc. all look
+# crisp instead of relying on sips' single-size icns output.
+ICONSET="$(mktemp -d)/AppIcon.iconset"
+mkdir -p "$ICONSET"
+SRC_PNG="$ICONSET/icon-source.png"
+swift Scripts/render-icon.swift "$SRC_PNG"
+for s in 16 32 64 128 256 512 1024; do
+  sips -z "$s" "$s" "$SRC_PNG" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+done
+cp "$ICONSET/icon_32x32.png"     "$ICONSET/icon_16x16@2x.png"
+cp "$ICONSET/icon_64x64.png"     "$ICONSET/icon_32x32@2x.png"
+cp "$ICONSET/icon_256x256.png"   "$ICONSET/icon_128x128@2x.png"
+cp "$ICONSET/icon_512x512.png"   "$ICONSET/icon_256x256@2x.png"
+cp "$ICONSET/icon_1024x1024.png" "$ICONSET/icon_512x512@2x.png"
+rm "$SRC_PNG"
+iconutil -c icns -o "$APP/Contents/Resources/AppIcon.icns" "$ICONSET"
+rm -rf "$(dirname "$ICONSET")"
+
 cat > "$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -39,8 +58,9 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundleDisplayName</key>         <string>Focus</string>
     <key>CFBundleIdentifier</key>          <string>com.nchourrout.focus</string>
     <key>CFBundleExecutable</key>          <string>focus</string>
+    <key>CFBundleIconFile</key>            <string>AppIcon</string>
     <key>CFBundleVersion</key>             <string>1</string>
-    <key>CFBundleShortVersionString</key>  <string>0.2.0</string>
+    <key>CFBundleShortVersionString</key>  <string>0.3.0</string>
     <key>CFBundlePackageType</key>         <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>LSMinimumSystemVersion</key>      <string>13.0</string>

@@ -32,7 +32,11 @@ enum Actions {
     }
 
     static func startPomodoro(goal: String, music: String?) {
-        var args = ["pomodoro", "start", goal]
+        var args = [
+            "pomodoro", "start", goal,
+            "--work", String(Defaults.workMinutes),
+            "--break", String(Defaults.breakMinutes),
+        ]
         if let music = music, !music.isEmpty {
             args.append(contentsOf: ["--music", music])
         }

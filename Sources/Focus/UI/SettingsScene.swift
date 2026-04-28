@@ -32,6 +32,16 @@ private struct GeneralTab: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
+                Text("Pomodoro duration").font(.headline)
+                HStack(spacing: 16) {
+                    Stepper("Work \(workMinutes) min", value: workBinding, in: 1...180)
+                    Stepper("Break \(breakMinutes) min", value: breakBinding, in: 1...60)
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Image(systemName: permissionInstalled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(permissionInstalled ? .green : .orange)
@@ -69,6 +79,22 @@ private struct GeneralTab: View {
         SudoersInstaller.installWithUI(
             onSuccess: { refreshTick += 1 },
             onError: { error in installError = error.localizedDescription }
+        )
+    }
+
+    private var workMinutes: Int { _ = refreshTick; return Defaults.workMinutes }
+    private var breakMinutes: Int { _ = refreshTick; return Defaults.breakMinutes }
+
+    private var workBinding: Binding<Int> {
+        Binding(
+            get: { Defaults.workMinutes },
+            set: { Defaults.workMinutes = $0; refreshTick += 1 }
+        )
+    }
+    private var breakBinding: Binding<Int> {
+        Binding(
+            get: { Defaults.breakMinutes },
+            set: { Defaults.breakMinutes = $0; refreshTick += 1 }
         )
     }
 
