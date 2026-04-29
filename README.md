@@ -15,6 +15,17 @@ A macOS menu bar app + CLI to get in the zone.
 
 > The repo was originally a Python script, archived at the tag [`v0-python`](https://github.com/nchourrout/focus/tree/v0-python). The Swift rewrite is wire-compatible: same `/etc/hosts` markers, same `~/.focus-pomodoro.json` schema.
 
+## Download
+
+Pre-built `.app` zips are attached to each [GitHub Release](https://github.com/nchourrout/focus/releases). Grab the latest, unzip, drag `Focus.app` to `/Applications`, then run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Focus.app
+open /Applications/Focus.app
+```
+
+The app is unsigned and unnotarized, so Gatekeeper blocks the first launch until that `xattr` runs (or right-click → Open → Open). The CLI symlink is not created by the zip download — if you want `focus` on `$PATH`, build from source instead:
+
 ## Build & install
 
 Requires macOS 13+ and Swift 5.10+. Xcode Command Line Tools are enough to build; `swift test` needs a full Xcode.
@@ -103,6 +114,17 @@ swift test
 ```
 
 Without Xcode, `swift build` still works; only `swift test` needs the full toolchain.
+
+## Releasing
+
+Single source of truth for `CFBundleShortVersionString` is the `VERSION` file at the repo root.
+
+```bash
+./Scripts/release.sh 0.4.0      # bumps VERSION, commits "Release v0.4.0", tags v0.4.0
+git push && git push origin v0.4.0
+```
+
+The tag push triggers `.github/workflows/release.yml`, which builds `Focus.app` on a clean macos-15 runner, zips it with `ditto`, and attaches `Focus-v0.4.0.zip` to a new GitHub Release.
 
 ## License
 

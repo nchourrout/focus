@@ -8,6 +8,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Single source of truth for CFBundleShortVersionString. Override via env when
+# building from a tag (e.g. release.yml passes FOCUS_VERSION=$(git describe)).
+VERSION="${FOCUS_VERSION:-$(cat VERSION)}"
+
 # `--show-bin-path` resolves the path without compiling, so we can look it up
 # first and only invoke `swift build` once.
 BIN_DIR="$(swift build -c release --show-bin-path)"
@@ -49,7 +53,7 @@ rm "$SRC_PNG"
 iconutil -c icns -o "$APP/Contents/Resources/AppIcon.icns" "$ICONSET"
 rm -rf "$(dirname "$ICONSET")"
 
-cat > "$APP/Contents/Info.plist" <<'EOF'
+cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -59,8 +63,8 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <key>CFBundleIdentifier</key>          <string>com.nchourrout.focus</string>
     <key>CFBundleExecutable</key>          <string>focus</string>
     <key>CFBundleIconFile</key>            <string>AppIcon</string>
-    <key>CFBundleVersion</key>             <string>1</string>
-    <key>CFBundleShortVersionString</key>  <string>0.3.0</string>
+    <key>CFBundleVersion</key>             <string>${VERSION}</string>
+    <key>CFBundleShortVersionString</key>  <string>${VERSION}</string>
     <key>CFBundlePackageType</key>         <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>LSMinimumSystemVersion</key>      <string>13.0</string>
@@ -71,4 +75,4 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
-echo "Built $APP"
+echo "Built $APP (version $VERSION)"

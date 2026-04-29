@@ -1,0 +1,67 @@
+name: Release
+
+# Triggered by pushing a `vX.Y.Z` tag (see Scripts/release.sh). Builds an
+# unsigned Focus.app, zips it, and attaches the archive to a new GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Swift / Xcode versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build Focus.app
+        env:
+          # Strip the leading `v` so CFBundleShortVersionString is "0.3.0", not "v0.3.0".
+          REF: ${{ github.ref_name }}
+        run: |
+          export FOCUS_VERSION="${REF#v}"
+          ./Scripts/build-app.sh
+
+      - name: Zip bundle
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          # ditto preserves resource forks / extended attributes correctly across
+          # the zip round-trip, which `zip -r` does not. Filename includes the
+          # tag so users can tell builds apart.
+          ditto -c -k --keepParent Focus.app "Focus-${REF}.zip"
+
+      - name: Write release notes
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          cat > release-notes.md <<EOF
+          ## Install
+
+          Download \`Focus-${REF}.zip\`, unzip, and drag \`Focus.app\` to \`/Applications\`.
+
+          The app is **unsigned and unnotarized**, so on first launch macOS Gatekeeper will refuse to open it. Bypass once with either:
+
+          \`\`\`
+          xattr -dr com.apple.quarantine /Applications/Focus.app
+          \`\`\`
+
+          ...or right-click \`Focus.app\` → Open → Open.
+
+          On first toggle of the website block, Focus prompts for your admin password to install \`/etc/sudoers.d/focus\`. After that, all toggles run without prompting.
+          EOF
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: ${{ github.ref_name }}
+        run: |
+          gh release create "${REF}" "Focus-${REF}.zip" \
+            --title "${REF}" \
+            --notes-file release-notes.md
