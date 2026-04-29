@@ -87,29 +87,28 @@ enum PomodoroDaemon {
             _ = Subprocess.run(Paths.selfExecutable.path, ["music", music])
         }
 
-        // sanitizeAppleScriptString rejects control characters, so the appended
-        // status uses a period separator rather than a newline.
-        Notifier.post(
-            title: "Pomodoro started",
-            body: goal + (blockFailed ? ". Couldn't block websites." : "")
-        )
+        // Notifications are emitted by AppState in the menu bar app process so
+        // the Focus icon shows on the banner. The daemon doesn't post — its
+        // only side effect here is the state file (and the block warning below
+        // when sudo -n fails, since the UI can't surface that condition).
+        if blockFailed {
+            FileHandle.standardError.write(Data(
+                "focus: warning — sudo -n block failed. Run install-sudoers.\n".utf8
+            ))
+        }
 
         var currentWorkEnd = workEnd
         var currentBreakEnd = breakEnd
 
         while true {
             sleepUntil(currentWorkEnd)
-            Notifier.post(title: "Pomodoro complete", body: "Finished: \(goal). Break time.")
-
             sleepUntil(currentBreakEnd)
 
-            if !Defaults.autoStartNextSession {
-                Notifier.post(title: "Break over", body: "Ready for another session?")
-                break
-            }
+            if !Defaults.autoStartNextSession { break }
 
-            // Loop: roll deadlines, persist new state so the menu bar reflects
-            // the fresh countdown, post a "starting next" nudge.
+            // Loop: roll deadlines and persist new state. The menu bar app
+            // notices the workEnd change and emits the "Starting next session"
+            // notification on its next refresh.
             let now = Date().timeIntervalSince1970
             currentWorkEnd = now + Double(workMinutes * 60)
             currentBreakEnd = currentWorkEnd + Double(breakMinutes * 60)
@@ -122,8 +121,6 @@ enum PomodoroDaemon {
                 )
                 try? next.save()
             }
-
-            Notifier.post(title: "Starting next session", body: goal)
         }
 
         clearEverything(unblock: block)

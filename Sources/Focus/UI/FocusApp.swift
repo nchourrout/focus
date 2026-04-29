@@ -28,6 +28,7 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         HotKeys.registerAll()
+        LocalNotifications.requestAuthorization()
     }
 }
 

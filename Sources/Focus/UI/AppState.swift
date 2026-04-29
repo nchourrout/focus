@@ -15,6 +15,10 @@ final class AppState: ObservableObject {
 
     private var timer: Timer?
     private var refreshInFlight = false
+    /// Suppress notifications on the first apply: at launch we may already see
+    /// a running session (the daemon survived an app restart) and we shouldn't
+    /// fire "Pomodoro started" against a session that began ages ago.
+    private var hasAppliedOnce = false
 
     init() {
         Task { await refresh() }
@@ -47,21 +51,71 @@ final class AppState: ObservableObject {
     private func apply(blockActive newBlock: Bool, state: PomodoroState?) {
         if newBlock != blockActive { blockActive = newBlock }
 
-        guard let s = state else {
+        let prevPomodoro = pomodoro
+        let prevPhase = phase
+
+        let newPhase: PomodoroState.Phase
+        if let s = state {
+            // pomodoro/phase only republish on discrete changes (start/stop,
+            // work→break, break→done, auto-start loop iterations) — at most a
+            // handful of times per session. workEnd is part of the comparison
+            // because auto-start rewrites the state file with new deadlines
+            // but the same pid/goal.
+            newPhase = s.phase().0
+            if pomodoro?.pid != s.pid
+                || pomodoro?.goal != s.goal
+                || pomodoro?.workEnd != s.workEnd { pomodoro = s }
+        } else {
             if pomodoro != nil { pomodoro = nil }
-            if phase != .done { phase = .done }
+            newPhase = .done
+        }
+        if newPhase != phase { phase = newPhase }
+
+        defer { hasAppliedOnce = true }
+        guard hasAppliedOnce else { return }
+        emitTransitionNotification(
+            from: (prevPomodoro, prevPhase),
+            to: (pomodoro, phase)
+        )
+    }
+
+    /// Detect work/break boundaries and post a notification through the UI
+    /// process so the Focus app icon appears on the banner. Goes through here
+    /// rather than from the daemon because the daemon has no NSApplication
+    /// and `osascript display notification` always attributes to Script Editor.
+    private func emitTransitionNotification(
+        from prev: (PomodoroState?, PomodoroState.Phase),
+        to curr: (PomodoroState?, PomodoroState.Phase)
+    ) {
+        let (prevPomo, prevPhase) = prev
+        let (currPomo, currPhase) = curr
+
+        // Start: nothing → work.
+        if prevPomo == nil, let s = currPomo, currPhase == .work {
+            LocalNotifications.post(title: "Pomodoro started", body: s.goal)
             return
         }
-
-        // pomodoro/phase only republish on discrete changes (start/stop, work→break,
-        // break→done, auto-start loop iterations) — at most a handful of times per
-        // session. workEnd is part of the comparison because auto-start rewrites
-        // the state file with new deadlines but the same pid/goal.
-        let (newPhase, _) = s.phase()
-        if pomodoro?.pid != s.pid
-            || pomodoro?.goal != s.goal
-            || pomodoro?.workEnd != s.workEnd { pomodoro = s }
-        if newPhase != phase { phase = newPhase }
+        // Auto-start loop: break → fresh work (workEnd advanced).
+        if prevPhase == .break, currPhase == .work, let s = currPomo {
+            LocalNotifications.post(title: "Starting next session", body: s.goal)
+            return
+        }
+        // Work → break.
+        if prevPhase == .work, currPhase == .break, let s = currPomo {
+            LocalNotifications.post(
+                title: "Pomodoro complete",
+                body: "Finished: \(s.goal). Break time."
+            )
+            return
+        }
+        // End of session: break → done (or daemon cleared the file).
+        if prevPhase == .break, currPhase == .done {
+            LocalNotifications.post(
+                title: "Break over",
+                body: "Ready for another session?"
+            )
+            return
+        }
     }
 }
 

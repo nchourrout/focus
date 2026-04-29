@@ -85,7 +85,7 @@ enum Actions {
             ) ?? ""
             let active = stdout.contains("\"active\": true")
             Task { @MainActor in
-                Notifier.post(
+                LocalNotifications.post(
                     title: active ? "Websites blocked" : "Websites unblocked",
                     body: active
                         ? "Distraction list is active."
