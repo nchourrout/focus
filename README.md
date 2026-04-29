@@ -1,5 +1,7 @@
 # focus
 
+<img src="docs/icon.png" alt="Focus icon" width="128" align="right" />
+
 [![Tests](https://github.com/nchourrout/focus/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/nchourrout/focus/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue.svg)](#build--install)
