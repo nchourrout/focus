@@ -12,6 +12,8 @@ permissions:
 jobs:
   release:
     runs-on: macos-15
+    env:
+      REF: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,16 +23,12 @@ jobs:
           xcodebuild -version
 
       - name: Build Focus.app
-        env:
-          # Strip the leading `v` so CFBundleShortVersionString is "0.3.0", not "v0.3.0".
-          REF: ${{ github.ref_name }}
         run: |
+          # Strip the leading `v` so CFBundleShortVersionString is "0.3.0", not "v0.3.0".
           export FOCUS_VERSION="${REF#v}"
           ./Scripts/build-app.sh
 
       - name: Zip bundle
-        env:
-          REF: ${{ github.ref_name }}
         run: |
           # ditto preserves resource forks / extended attributes correctly across
           # the zip round-trip, which `zip -r` does not. Filename includes the
@@ -38,8 +36,6 @@ jobs:
           ditto -c -k --keepParent Focus.app "Focus-${REF}.zip"
 
       - name: Write release notes
-        env:
-          REF: ${{ github.ref_name }}
         run: |
           cat > release-notes.md <<EOF
           ## Install
@@ -60,7 +56,6 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REF: ${{ github.ref_name }}
         run: |
           gh release create "${REF}" "Focus-${REF}.zip" \
             --title "${REF}" \

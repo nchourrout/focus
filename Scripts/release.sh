@@ -34,10 +34,19 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
+if [[ "$(git symbolic-ref --short HEAD 2>/dev/null)" != "main" ]]; then
+  echo "error: must be on main (tags should follow main)" >&2
+  exit 1
+fi
+
+# Idempotent: if VERSION already matches (e.g. cutting the very first release
+# at the in-tree version), skip the bump commit and just tag HEAD.
 echo "$VERSION" > VERSION
-git add VERSION
-git commit -m "Release $TAG"
-git tag -a "$TAG" -m "$TAG"
+if ! git diff --quiet VERSION; then
+  git add VERSION
+  git commit -m "Release $TAG"
+fi
+git tag -a "$TAG" -m "Release $TAG"
 
 echo
 echo "Created commit + tag $TAG. Push with:"

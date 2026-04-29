@@ -24,7 +24,7 @@ xattr -dr com.apple.quarantine /Applications/Focus.app
 open /Applications/Focus.app
 ```
 
-The app is unsigned and unnotarized, so Gatekeeper blocks the first launch until that `xattr` runs (or right-click → Open → Open). The CLI symlink is not created by the zip download — if you want `focus` on `$PATH`, build from source instead:
+The app is unsigned and unnotarized, so Gatekeeper blocks the first launch until that `xattr` runs (or right-click → Open → Open). The CLI symlink is not created by the zip download. If you want `focus` on `$PATH`, build from source (next section).
 
 ## Build & install
 
