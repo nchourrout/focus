@@ -50,7 +50,7 @@ The `.app` is unsigned; `install.sh` strips the quarantine flag so Gatekeeper do
 
 Click the icon for a dropdown:
 
-- **🍅 timer / ☕ break** icon with a live countdown while a pomodoro runs
+- **stopwatch icon** during work, **coffee cup** during the break, with a live `mm:ss` countdown next to it. Idle shows a dashed circle (or a slashed circle when the block is on)
 - **Start pomodoro…** — prompts for a goal; replaced by **Stop pomodoro** while running
 - **Block / Unblock websites** — toggles `/etc/hosts` (uses the sudoers drop-in)
 - **Music** submenu — any preset, or Stop
