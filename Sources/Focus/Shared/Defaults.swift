@@ -51,4 +51,14 @@ enum Defaults {
     static var dohSuppressionFlags: [String] {
         blockDoHEndpoints ? [] : ["--no-block-doh"]
     }
+
+    private static let autoStartKey = "autoStartNextSession"
+
+    /// When on, the pomodoro daemon loops: after the break, it starts another
+    /// work/break cycle with the same goal/durations instead of clearing state.
+    /// Default off.
+    static var autoStartNextSession: Bool {
+        get { UserDefaults.standard.bool(forKey: autoStartKey) }
+        set { UserDefaults.standard.set(newValue, forKey: autoStartKey) }
+    }
 }

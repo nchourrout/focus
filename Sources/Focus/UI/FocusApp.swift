@@ -33,15 +33,15 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate {
 
 /// Menu bar icon + optional countdown label.
 ///
-/// The per-second countdown is driven by `TimelineView` so its updates stay
-/// scoped to a small subtree (otherwise re-renders would also rebuild
-/// `MenuContent` and reset AppKit's hover selection).
-///
-/// Critically: the SF-Symbol `Image` lives OUTSIDE the TimelineView. Earlier
-/// the whole HStack was inside, so a fresh `Image(systemName:)` was created
-/// each second, which `NSStatusBar.setImage` accumulated without freeing —
-/// the app climbed to ~40 GB resident memory and froze. Only the `Text`
-/// rebuilds on each tick now.
+/// The countdown lives in `CountdownText`, a child view that owns its own
+/// 1Hz timer. Driving the tick from inside that subview means:
+///   (1) MenuBarExtra picks up the per-second updates (TimelineView ticks
+///       don't always propagate to the menu bar label snapshot on macOS 15+);
+///   (2) MenuContent's @ObservedObject doesn't see a change, so AppKit's
+///       hover selection doesn't reset every second;
+///   (3) the SF-Symbol `Image` lives in the parent body and isn't recreated
+///       per tick — past attempt to do so leaked NSImage refs through
+///       NSStatusBar.setImage, climbing to ~40 GB resident memory.
 struct StatusLabel: View {
     @ObservedObject var state: AppState
 
@@ -49,13 +49,23 @@ struct StatusLabel: View {
         if let pomodoro = state.pomodoro, state.isRunning {
             HStack(spacing: 4) {
                 Image(systemName: state.phase == .break ? "cup.and.saucer.fill" : "timer")
-                TimelineView(.periodic(from: .now, by: 1.0)) { ctx in
-                    let (_, timeLeft) = pomodoro.phase(at: ctx.date.timeIntervalSince1970)
-                    Text(formatCountdown(timeLeft)).monospacedDigit()
-                }
+                CountdownText(pomodoro: pomodoro)
             }
         } else {
             Image(systemName: state.blockActive ? "nosign" : "circle.dashed")
         }
+    }
+}
+
+private struct CountdownText: View {
+    let pomodoro: PomodoroState
+    @State private var now: Date = Date()
+    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        let (_, timeLeft) = pomodoro.phase(at: now.timeIntervalSince1970)
+        Text(formatCountdown(timeLeft))
+            .monospacedDigit()
+            .onReceive(tick) { now = $0 }
     }
 }

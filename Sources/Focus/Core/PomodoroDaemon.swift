@@ -32,6 +32,8 @@ enum PomodoroDaemon {
             "--goal", goal,
             "--work-end", String(workEnd),
             "--break-end", String(breakEnd),
+            "--work-minutes", String(workMinutes),
+            "--break-minutes", String(breakMinutes),
         ]
         if let music = musicURI {
             args.append(contentsOf: ["--music", music])
@@ -55,7 +57,16 @@ enum PomodoroDaemon {
     /// - We do NOT install a SIGTERM handler. Default behavior is to terminate, which
     ///   means cleanup on interruption is the responsibility of `pomodoro stop`'s fallback
     ///   path. Normal completion cleans up explicitly at the end of this function.
-    static func runDaemon(goal: String, workEnd: Double, breakEnd: Double, music: String?, block: Bool) {
+    /// - When `Defaults.autoStartNextSession` is on, the daemon loops: after the
+    ///   break it computes new deadlines, rewrites the state file, and starts a
+    ///   fresh work phase with the same goal. Block + music carry over so we
+    ///   don't re-spawn sudo or restart playback. The setting is re-read each
+    ///   iteration, so flipping it off mid-session takes effect at the next break.
+    static func runDaemon(
+        goal: String, workEnd: Double, breakEnd: Double,
+        workMinutes: Int, breakMinutes: Int,
+        music: String?, block: Bool
+    ) {
         signal(SIGHUP, SIG_IGN)
         _ = Darwin.setsid()
 
@@ -83,11 +94,37 @@ enum PomodoroDaemon {
             body: goal + (blockFailed ? ". Couldn't block websites." : "")
         )
 
-        sleepUntil(workEnd)
-        Notifier.post(title: "Pomodoro complete", body: "Finished: \(goal). Break time.")
+        var currentWorkEnd = workEnd
+        var currentBreakEnd = breakEnd
 
-        sleepUntil(breakEnd)
-        Notifier.post(title: "Break over", body: "Ready for another session?")
+        while true {
+            sleepUntil(currentWorkEnd)
+            Notifier.post(title: "Pomodoro complete", body: "Finished: \(goal). Break time.")
+
+            sleepUntil(currentBreakEnd)
+
+            if !Defaults.autoStartNextSession {
+                Notifier.post(title: "Break over", body: "Ready for another session?")
+                break
+            }
+
+            // Loop: roll deadlines, persist new state so the menu bar reflects
+            // the fresh countdown, post a "starting next" nudge.
+            let now = Date().timeIntervalSince1970
+            currentWorkEnd = now + Double(workMinutes * 60)
+            currentBreakEnd = currentWorkEnd + Double(breakMinutes * 60)
+
+            if let prev = PomodoroState.current {
+                let next = PomodoroState(
+                    goal: prev.goal, pid: prev.pid, startedAt: now,
+                    workEnd: currentWorkEnd, breakEnd: currentBreakEnd,
+                    music: prev.music, block: prev.block
+                )
+                try? next.save()
+            }
+
+            Notifier.post(title: "Starting next session", body: goal)
+        }
 
         clearEverything(unblock: block)
     }

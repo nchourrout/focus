@@ -54,9 +54,13 @@ final class AppState: ObservableObject {
         }
 
         // pomodoro/phase only republish on discrete changes (start/stop, work→break,
-        // break→done) — at most a handful of times per session.
+        // break→done, auto-start loop iterations) — at most a handful of times per
+        // session. workEnd is part of the comparison because auto-start rewrites
+        // the state file with new deadlines but the same pid/goal.
         let (newPhase, _) = s.phase()
-        if pomodoro?.pid != s.pid || pomodoro?.goal != s.goal { pomodoro = s }
+        if pomodoro?.pid != s.pid
+            || pomodoro?.goal != s.goal
+            || pomodoro?.workEnd != s.workEnd { pomodoro = s }
         if newPhase != phase { phase = newPhase }
     }
 }

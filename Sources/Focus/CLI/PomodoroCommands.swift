@@ -124,6 +124,10 @@ struct PomodoroRun: ParsableCommand {
     @Option var goal: String
     @Option(name: .customLong("work-end")) var workEnd: Double
     @Option(name: .customLong("break-end")) var breakEnd: Double
+    /// Durations are also passed (not just end timestamps) so the daemon can
+    /// roll its own next-cycle deadlines when auto-start is enabled.
+    @Option(name: .customLong("work-minutes")) var workMinutes: Int
+    @Option(name: .customLong("break-minutes")) var breakMinutes: Int
     @Option var music: String?
     @Flag(inversion: .prefixedNo) var block: Bool = true
 
@@ -132,6 +136,8 @@ struct PomodoroRun: ParsableCommand {
             goal: goal,
             workEnd: workEnd,
             breakEnd: breakEnd,
+            workMinutes: workMinutes,
+            breakMinutes: breakMinutes,
             music: music,
             block: block
         )

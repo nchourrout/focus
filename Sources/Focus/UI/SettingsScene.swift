@@ -40,6 +40,9 @@ private struct GeneralTab: View {
                 Toggle(isOn: blockDuringPomodoroBinding) {
                     Text("Block websites during pomodoro")
                 }
+                Toggle(isOn: autoStartBinding) {
+                    Text("Auto-start next session after break")
+                }
             }
 
             Divider()
@@ -117,6 +120,13 @@ private struct GeneralTab: View {
         Binding(
             get: { _ = refreshTick; return Defaults.blockDuringPomodoro },
             set: { Defaults.blockDuringPomodoro = $0; refreshTick += 1 }
+        )
+    }
+
+    private var autoStartBinding: Binding<Bool> {
+        Binding(
+            get: { _ = refreshTick; return Defaults.autoStartNextSession },
+            set: { Defaults.autoStartNextSession = $0; refreshTick += 1 }
         )
     }
 
