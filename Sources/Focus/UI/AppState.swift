@@ -92,28 +92,34 @@ final class AppState: ObservableObject {
 
         // Start: nothing → work.
         if prevPomo == nil, let s = currPomo, currPhase == .work {
-            LocalNotifications.post(title: "Pomodoro started", body: s.goal)
+            LocalNotifications.post(title: "Pomodoro started", body: s.goal, sound: nil)
+            Sounds.play(.sessionStart)
             return
         }
         // Auto-start loop: break → fresh work (workEnd advanced).
         if prevPhase == .break, currPhase == .work, let s = currPomo {
-            LocalNotifications.post(title: "Starting next session", body: s.goal)
+            LocalNotifications.post(title: "Starting next session", body: s.goal, sound: nil)
+            Sounds.play(.sessionStart)
             return
         }
         // Work → break.
         if prevPhase == .work, currPhase == .break, let s = currPomo {
             LocalNotifications.post(
                 title: "Pomodoro complete",
-                body: "Finished: \(s.goal). Break time."
+                body: "Finished: \(s.goal). Break time.",
+                sound: nil
             )
+            Sounds.play(.breakStart)
             return
         }
         // End of session: break → done (or daemon cleared the file).
         if prevPhase == .break, currPhase == .done {
             LocalNotifications.post(
                 title: "Break over",
-                body: "Ready for another session?"
+                body: "Ready for another session?",
+                sound: nil
             )
+            Sounds.play(.sessionEnd)
             return
         }
     }

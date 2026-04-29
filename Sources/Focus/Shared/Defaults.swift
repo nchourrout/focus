@@ -61,4 +61,14 @@ enum Defaults {
         get { UserDefaults.standard.bool(forKey: autoStartKey) }
         set { UserDefaults.standard.set(newValue, forKey: autoStartKey) }
     }
+
+    private static let phaseSoundsKey = "playPhaseSounds"
+
+    /// When on, the menu bar app plays an `NSSound` cue at each phase boundary
+    /// (session start, break start, break end). Default on. Independent of
+    /// notification sounds so it still fires under Do-Not-Disturb.
+    static var playPhaseSounds: Bool {
+        get { UserDefaults.standard.object(forKey: phaseSoundsKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: phaseSoundsKey) }
+    }
 }

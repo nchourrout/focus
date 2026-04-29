@@ -43,6 +43,9 @@ private struct GeneralTab: View {
                 Toggle(isOn: autoStartBinding) {
                     Text("Auto-start next session after break")
                 }
+                Toggle(isOn: phaseSoundsBinding) {
+                    Text("Play sound at phase transitions")
+                }
             }
 
             Divider()
@@ -127,6 +130,19 @@ private struct GeneralTab: View {
         Binding(
             get: { _ = refreshTick; return Defaults.autoStartNextSession },
             set: { Defaults.autoStartNextSession = $0; refreshTick += 1 }
+        )
+    }
+
+    private var phaseSoundsBinding: Binding<Bool> {
+        Binding(
+            get: { _ = refreshTick; return Defaults.playPhaseSounds },
+            set: { newValue in
+                Defaults.playPhaseSounds = newValue
+                refreshTick += 1
+                // Audible feedback when the toggle is flipped on, so the user
+                // hears what kind of cue they've just enabled.
+                if newValue { Sounds.play(.sessionStart) }
+            }
         )
     }
 
