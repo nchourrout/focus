@@ -71,4 +71,13 @@ enum Defaults {
         get { UserDefaults.standard.object(forKey: phaseSoundsKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: phaseSoundsKey) }
     }
+
+    private static let pomodoroMusicKey = "pomodoroMusic"
+
+    /// Preset name (see `MusicPresets`) to auto-start when a pomodoro begins.
+    /// Empty string means no music auto-start. An http(s):// URL is also accepted.
+    static var pomodoroMusic: String {
+        get { UserDefaults.standard.string(forKey: pomodoroMusicKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: pomodoroMusicKey) }
+    }
 }

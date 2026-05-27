@@ -13,7 +13,7 @@ struct SettingsContent: View {
             BlockListTab()
                 .tabItem { Label("Block list", systemImage: "nosign") }
         }
-        .frame(width: 480, height: 360)
+        .frame(width: 480, height: 460)
     }
 }
 
@@ -24,6 +24,7 @@ private struct GeneralTab: View {
     @State private var installError: String?
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 16) {
             Toggle(isOn: launchAtLoginBinding) {
                 Text("Launch at login")
@@ -45,6 +46,12 @@ private struct GeneralTab: View {
                 }
                 Toggle(isOn: phaseSoundsBinding) {
                     Text("Play sound at phase transitions")
+                }
+                Picker("Start music with pomodoro", selection: pomodoroMusicBinding) {
+                    Text("None").tag("")
+                    ForEach(MusicPresets.list, id: \.name) { preset in
+                        Text(preset.name.capitalized).tag(preset.name)
+                    }
                 }
             }
 
@@ -83,11 +90,10 @@ private struct GeneralTab: View {
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer()
         }
         .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
     }
 
     private var permissionInstalled: Bool {
@@ -143,6 +149,13 @@ private struct GeneralTab: View {
                 // hears what kind of cue they've just enabled.
                 if newValue { Sounds.play(.sessionStart) }
             }
+        )
+    }
+
+    private var pomodoroMusicBinding: Binding<String> {
+        Binding(
+            get: { _ = refreshTick; return Defaults.pomodoroMusic },
+            set: { Defaults.pomodoroMusic = $0; refreshTick += 1 }
         )
     }
 

@@ -26,7 +26,8 @@ enum Actions {
         if alert.runModal() == .alertFirstButtonReturn {
             let goal = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             if !goal.isEmpty {
-                startPomodoro(goal: goal, music: nil)
+                let preset = Defaults.pomodoroMusic
+                startPomodoro(goal: goal, music: preset.isEmpty ? nil : preset)
             }
         }
     }
