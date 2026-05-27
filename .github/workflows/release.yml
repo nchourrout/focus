@@ -1,13 +1,17 @@
 name: Release
 
-# Triggered by pushing a `vX.Y.Z` tag (see Scripts/release.sh). Builds an
-# unsigned Focus.app, zips it, and attaches the archive to a new GitHub Release.
+# Triggered by pushing a `vX.Y.Z` tag (see Scripts/release.sh). Verifies the
+# tag matches the VERSION file, runs tests, builds an unsigned Focus.app,
+# zips it, and attaches the archive to a new GitHub Release.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   release:
@@ -21,6 +25,18 @@ jobs:
         run: |
           swift --version
           xcodebuild -version
+
+      - name: Verify VERSION matches tag
+        run: |
+          EXPECTED="${REF#v}"
+          ACTUAL="$(cat VERSION)"
+          if [[ "$EXPECTED" != "$ACTUAL" ]]; then
+            echo "error: tag $REF expects VERSION=$EXPECTED but file says $ACTUAL" >&2
+            exit 1
+          fi
+
+      - name: Run unit tests
+        run: swift test
 
       - name: Build Focus.app
         run: |

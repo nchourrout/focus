@@ -7,10 +7,10 @@ struct Music: ParsableCommand {
         abstract: "play or stop focus music"
     )
 
-    @Argument(help: "Preset name (see --list) or a spotify: URI")
+    @Argument(help: "Preset name (see --list) or an http(s):// stream URL")
     var target: String?
 
-    @Option(help: "Spotify URI (overrides target / FOCUS_SPOTIFY_URI)")
+    @Option(help: "Stream URL (overrides target / FOCUS_MUSIC_URI)")
     var uri: String?
 
     @Option(help: "Local audio file to play with afplay")
@@ -19,7 +19,7 @@ struct Music: ParsableCommand {
     @Flag(help: "Loop the local file")
     var loop: Bool = false
 
-    @Flag(help: "Pause Spotify and stop afplay")
+    @Flag(help: "Stop any current playback")
     var stop: Bool = false
 
     @Flag(name: .customLong("list"), help: "Show available presets")

@@ -1,0 +1,20 @@
+# Dependency monitoring without auto-opened PRs.
+#
+# Dependabot scans the manifests below and reports findings, but each ecosystem
+# is set to `open-pull-requests-limit: 0` so no PRs are created automatically.
+# Security advisories still surface in the Security tab and via email — only
+# the noisy version-bump PRs are suppressed.
+
+version: 2
+updates:
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0

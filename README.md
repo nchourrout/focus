@@ -15,8 +15,6 @@ A macOS menu bar app + CLI to get in the zone.
 - **Launch at login** toggle via `SMAppService`
 - One Swift binary is both the menu bar app (run with no args) and the CLI (run with a subcommand)
 
-> The repo was originally a Python script, archived at the tag [`v0-python`](https://github.com/nchourrout/focus/tree/v0-python). The Swift rewrite is wire-compatible: same `/etc/hosts` markers, same `~/.focus-pomodoro.json` schema.
-
 ## Download
 
 Pre-built `.app` zips are attached to each [GitHub Release](https://github.com/nchourrout/focus/releases). Grab the latest, unzip, drag `Focus.app` to `/Applications`, then run:
@@ -54,7 +52,7 @@ Click the icon for a dropdown:
 - **Start pomodoro…** — prompts for a goal; replaced by **Stop pomodoro** while running
 - **Block / Unblock websites** — toggles `/etc/hosts` (uses the sudoers drop-in)
 - **Music** submenu — any preset, or Stop
-- **Settings…** — tabbed window with General (launch at login) and Shortcuts (global hotkey recorders)
+- **Settings…** — tabbed window: General (durations, launch at login, sounds, music preset), Shortcuts (global hotkey recorders), Block list (the sites edited inline)
 - **Quit Focus**
 
 Menu actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.json` stays the single source of truth. The menu bar polls it once a second.
@@ -76,7 +74,7 @@ focus music --file ~/brown.mp3 --loop
 focus music --stop
 
 focus pomodoro start "write spec"                 # 25min work, 5min break
-focus pomodoro start "deep work" --work 50 --break 10 --music lofi
+focus pomodoro start "deep work" --work 50 --break 10 --music groovesalad
 focus pomodoro status                             # add --json for machine-readable
 focus pomodoro stop
 ```
@@ -96,13 +94,13 @@ Focus installs it itself — no separate shell script:
 - On the first Hyper+B / Block toggle, the app detects the missing drop-in and prompts with the **native macOS admin password dialog** (same UX as Xcode, Homebrew-cask, etc.). Enter your password once; the rule is written after `visudo -cf` validation.
 - You can re-run the install from **Settings → General → Grant permission…** at any time (e.g. if the binary path changes).
 
-The generated rule whitelists exactly four subcommands (`block`, `unblock`, `toggle`, `toggle --json`) against the Focus.app binary path — no wildcards.
+The generated rule whitelists exactly six subcommands (`block`, `block --no-block-doh`, `unblock`, `toggle`, `toggle --json`, `toggle --json --no-block-doh`) against the Focus.app binary path — no wildcards.
 
 ## State files
 
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
-- `~/.focus-pomodoro.json` — active session (goal, pid, work_end, break_end, music)
+- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block)
 - `~/.focus-music.pid` — afplay PID for `--stop`
 
 ## Testing

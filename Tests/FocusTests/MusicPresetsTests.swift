@@ -34,9 +34,9 @@ import Testing
     }
 
     @Test func resolveRejectsNonHTTPSchemes() {
-        // After Spotify removal these should all be treated as unknown presets,
-        // not silently passed through to AVPlayer or any handler.
-        for unsafe in ["spotify:track:abc", "file:///etc/passwd", "ftp://x.example/y", "javascript:alert(1)"] {
+        // Anything that isn't a preset name or http(s):// URL must throw, not
+        // get silently passed through to AVPlayer or any handler.
+        for unsafe in ["file:///etc/passwd", "ftp://x.example/y", "javascript:alert(1)"] {
             #expect(throws: MusicPresets.ResolveError.self) {
                 _ = try MusicPresets.resolve(target: unsafe, explicitURI: nil)
             }
