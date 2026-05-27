@@ -6,7 +6,8 @@ enum PomodoroDaemon {
     /// backfills the PID into the state file, and returns. Recovers from a stale
     /// state file (dead PID) by clearing and proceeding.
     static func launch(goal: String, workMinutes: Int, breakMinutes: Int, music: String?, block: Bool) throws {
-        if let existing = PomodoroState.current {
+        let session = PomodoroSession.default
+        if let existing = session.current {
             // Verify the PID is both alive *and* actually our daemon, to guard against
             // PID recycling (a long-running process reusing the dead daemon's PID).
             if isOurProcess(pid: existing.pid, expectedStart: existing.startedAt) {
@@ -19,8 +20,9 @@ enum PomodoroDaemon {
         }
 
         let now = Date().timeIntervalSince1970
-        let workEnd = now + Double(workMinutes * 60)
-        let breakEnd = workEnd + Double(breakMinutes * 60)
+        let (workEnd, breakEnd) = session.deadlines(
+            workMinutes: workMinutes, breakMinutes: breakMinutes, at: now
+        )
         // Single source of truth for preset / env-var resolution. Fails fast on unknown preset.
         let musicURI = try MusicPresets.resolve(target: music, explicitURI: nil)
 
@@ -41,11 +43,11 @@ enum PomodoroDaemon {
         if !block { args.append("--no-block") }
         let p = try Subprocess.launchSilent(Paths.selfExecutable, args)
 
-        let state = PomodoroState(
+        let active = PomodoroSession.Active(
             goal: goal, pid: p.processIdentifier, startedAt: now,
             workEnd: workEnd, breakEnd: breakEnd, music: musicURI, block: block
         )
-        try state.save()
+        try session.save(active)
 
         print("focus: pomodoro started — \(workMinutes)min work, \(breakMinutes)min break — \(goal)")
     }
@@ -58,10 +60,11 @@ enum PomodoroDaemon {
     ///   means cleanup on interruption is the responsibility of `pomodoro stop`'s fallback
     ///   path. Normal completion cleans up explicitly at the end of this function.
     /// - When `Defaults.autoStartNextSession` is on, the daemon loops: after the
-    ///   break it computes new deadlines, rewrites the state file, and starts a
-    ///   fresh work phase with the same goal. Block + music carry over so we
-    ///   don't re-spawn sudo or restart playback. The setting is re-read each
-    ///   iteration, so flipping it off mid-session takes effect at the next break.
+    ///   break it asks PomodoroSession for the next iteration, rewrites the state
+    ///   file, and starts a fresh work phase with the same goal. Block + music
+    ///   carry over so we don't re-spawn sudo or restart playback. The setting is
+    ///   re-read each iteration, so flipping it off mid-session takes effect at
+    ///   the next break.
     static func runDaemon(
         goal: String, workEnd: Double, breakEnd: Double,
         workMinutes: Int, breakMinutes: Int,
@@ -97,6 +100,7 @@ enum PomodoroDaemon {
             ))
         }
 
+        let session = PomodoroSession.default
         var currentWorkEnd = workEnd
         var currentBreakEnd = breakEnd
 
@@ -109,17 +113,16 @@ enum PomodoroDaemon {
             // Loop: roll deadlines and persist new state. The menu bar app
             // notices the workEnd change and emits the "Starting next session"
             // notification on its next refresh.
-            let now = Date().timeIntervalSince1970
-            currentWorkEnd = now + Double(workMinutes * 60)
-            currentBreakEnd = currentWorkEnd + Double(breakMinutes * 60)
-
-            if let prev = PomodoroState.current {
-                let next = PomodoroState(
-                    goal: prev.goal, pid: prev.pid, startedAt: now,
-                    workEnd: currentWorkEnd, breakEnd: currentBreakEnd,
-                    music: prev.music, block: prev.block
+            if let prev = session.current {
+                let next = session.nextSession(
+                    after: prev,
+                    workMinutes: workMinutes, breakMinutes: breakMinutes
                 )
-                try? next.save()
+                try? session.save(next)
+                currentWorkEnd = next.workEnd
+                currentBreakEnd = next.breakEnd
+            } else {
+                break
             }
         }
 
@@ -127,7 +130,8 @@ enum PomodoroDaemon {
     }
 
     static func stop() {
-        guard let state = PomodoroState.current else {
+        let session = PomodoroSession.default
+        guard let state = session.current else {
             print("focus: no pomodoro running")
             return
         }
@@ -154,7 +158,7 @@ enum PomodoroDaemon {
         }
         // Music doesn't need root; call Core directly instead of forking the CLI.
         LocalPlayback.stop()
-        PomodoroState.clearFile()
+        PomodoroSession.default.clear()
     }
 
     private static func sleepUntil(_ deadline: TimeInterval) {

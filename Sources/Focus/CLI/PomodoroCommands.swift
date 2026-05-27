@@ -74,7 +74,8 @@ extension Pomodoro {
         var json: Bool = false
 
         func run() throws {
-            guard let state = PomodoroState.current else {
+            let session = PomodoroSession.default
+            guard let state = session.current else {
                 if json {
                     print("{\"running\": false}")
                 } else {
@@ -82,7 +83,7 @@ extension Pomodoro {
                 }
                 return
             }
-            let (phase, timeLeft) = state.phase()
+            let (phase, timeLeft) = session.phase(of: state)
             if json {
                 let payload = StatusPayload(
                     running: true,

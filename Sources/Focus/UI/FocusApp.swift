@@ -59,12 +59,12 @@ struct StatusLabel: View {
 }
 
 private struct CountdownText: View {
-    let pomodoro: PomodoroState
+    let pomodoro: PomodoroSession.Active
     @State private var now: Date = Date()
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        let (_, timeLeft) = pomodoro.phase(at: now.timeIntervalSince1970)
+        let (_, timeLeft) = PomodoroSession.default.phase(of: pomodoro, at: now.timeIntervalSince1970)
         Text(formatCountdown(timeLeft))
             .monospacedDigit()
             .onReceive(tick) { now = $0 }

@@ -23,6 +23,21 @@ DNS-over-HTTPS resolver hostnames (e.g. `dns.google`) that SiteBlock also routes
 to loopback so browsers fall back to the OS resolver. Internal to SiteBlock.
 _Avoid_: secure DNS, DoH servers.
 
+**PomodoroSession**:
+The module that owns one user's pomodoro lifecycle: persistence, deadline math,
+phase derivation, and (later) transition events. One on-disk record at a time.
+_Avoid_: timer, pomodoro manager.
+
+**Active session**:
+A pomodoro currently in progress (or just finished and not yet cleared). A
+`PomodoroSession.Active` carries goal, pid, deadlines, music, block flag.
+_Avoid_: running pomodoro, current state.
+
+**Phase**:
+Which part of an Active session is currently underway: `work`, `break`, or
+`done`. Derived from deadlines, not stored.
+_Avoid_: stage, step.
+
 ## Example dialogue
 
 > **Dev**: When the user clicks Toggle in the menu bar, what happens?

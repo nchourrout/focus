@@ -53,7 +53,7 @@ enum Actions {
     /// Single-shortcut affordance: stop if a session is running, otherwise prompt
     /// for a goal and start one.
     static func togglePomodoro() {
-        if PomodoroState.current != nil {
+        if PomodoroSession.default.current != nil {
             stopPomodoro()
         } else {
             promptAndStartPomodoro()

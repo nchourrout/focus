@@ -6,8 +6,8 @@ import SwiftUI
 /// differ so SwiftUI doesn't re-render every tick unnecessarily.
 @MainActor
 final class AppState: ObservableObject {
-    @Published private(set) var pomodoro: PomodoroState?
-    @Published private(set) var phase: PomodoroState.Phase = .done
+    @Published private(set) var pomodoro: PomodoroSession.Active?
+    @Published private(set) var phase: PomodoroSession.Phase = .done
     @Published private(set) var blockActive: Bool = false
     // No @Published timeLeft: per-second updates would also re-render the menu
     // dropdown via @ObservedObject, which resets AppKit's hover selection.
@@ -43,25 +43,25 @@ final class AppState: ObservableObject {
         refreshInFlight = true
         defer { refreshInFlight = false }
         let snapshot = await Task.detached {
-            (block: SiteBlock.default.isActive, state: PomodoroState.current)
+            (block: SiteBlock.default.isActive, state: PomodoroSession.default.current)
         }.value
         apply(blockActive: snapshot.block, state: snapshot.state)
     }
 
-    private func apply(blockActive newBlock: Bool, state: PomodoroState?) {
+    private func apply(blockActive newBlock: Bool, state: PomodoroSession.Active?) {
         if newBlock != blockActive { blockActive = newBlock }
 
         let prevPomodoro = pomodoro
         let prevPhase = phase
 
-        let newPhase: PomodoroState.Phase
+        let newPhase: PomodoroSession.Phase
         if let s = state {
             // pomodoro/phase only republish on discrete changes (start/stop,
             // work→break, break→done, auto-start loop iterations) — at most a
             // handful of times per session. workEnd is part of the comparison
             // because auto-start rewrites the state file with new deadlines
             // but the same pid/goal.
-            newPhase = s.phase().0
+            newPhase = PomodoroSession.default.phase(of: s).phase
             if pomodoro?.pid != s.pid
                 || pomodoro?.goal != s.goal
                 || pomodoro?.workEnd != s.workEnd { pomodoro = s }
@@ -84,8 +84,8 @@ final class AppState: ObservableObject {
     /// rather than from the daemon because the daemon has no NSApplication
     /// and `osascript display notification` always attributes to Script Editor.
     private func emitTransitionNotification(
-        from prev: (PomodoroState?, PomodoroState.Phase),
-        to curr: (PomodoroState?, PomodoroState.Phase)
+        from prev: (PomodoroSession.Active?, PomodoroSession.Phase),
+        to curr: (PomodoroSession.Active?, PomodoroSession.Phase)
     ) {
         let (prevPomo, prevPhase) = prev
         let (currPomo, currPhase) = curr
