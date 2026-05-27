@@ -30,6 +30,20 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate {
         HotKeys.registerAll()
         LocalNotifications.requestAuthorization()
     }
+
+    /// Cleanly tear down anything that would otherwise outlive the menu bar app:
+    /// a running pomodoro daemon (it handles its own block/music cleanup based on
+    /// the session's `block` flag) and a standalone /etc/hosts block left active
+    /// by a manual toggle. Both calls are synchronous; macOS gives apps several
+    /// seconds during termination.
+    func applicationWillTerminate(_ notification: Notification) {
+        if PomodoroSession.default.current != nil {
+            PomodoroDaemon.stop()
+        }
+        if SiteBlock.default.isActive {
+            Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
+        }
+    }
 }
 
 /// Menu bar icon + optional countdown label.
