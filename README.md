@@ -94,7 +94,7 @@ Focus installs it itself — no separate shell script:
 - On the first Hyper+B / Block toggle, the app detects the missing drop-in and prompts with the **native macOS admin password dialog** (same UX as Xcode, Homebrew-cask, etc.). Enter your password once; the rule is written after `visudo -cf` validation.
 - You can re-run the install from **Settings → General → Grant permission…** at any time (e.g. if the binary path changes).
 
-The generated rule whitelists exactly six subcommands (`block`, `block --no-block-doh`, `unblock`, `toggle`, `toggle --json`, `toggle --json --no-block-doh`) against the Focus.app binary path — no wildcards.
+The generated rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binary path, including the documented flag combinations (`--no-block-doh`, `--json`). No wildcards. See [`SudoersInstaller.renderRule`](Sources/Focus/Core/SudoersInstaller.swift) for the exact lines.
 
 ## State files
 

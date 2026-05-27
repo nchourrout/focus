@@ -4,7 +4,7 @@ import Foundation
 struct FocusCLI: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "focus",
-        abstract: "Block distractions and play focus music on macOS.",
+        abstract: "Run pomodoros, block distractions, and play focus music on macOS.",
         subcommands: [
             Block.self,
             Unblock.self,

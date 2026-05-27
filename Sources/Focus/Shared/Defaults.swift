@@ -75,9 +75,16 @@ enum Defaults {
     private static let pomodoroMusicKey = "pomodoroMusic"
 
     /// Preset name (see `MusicPresets`) to auto-start when a pomodoro begins.
-    /// Empty string means no music auto-start. An http(s):// URL is also accepted.
+    /// Empty string means no music auto-start. Stored values that aren't a
+    /// known preset (a stale name from an older release, or a URL set via
+    /// `defaults write`) read back as "" so the Settings Picker doesn't show
+    /// a blank selection. URL-based music is still reachable through the CLI's
+    /// `focus pomodoro start --music https://...`, which bypasses this default.
     static var pomodoroMusic: String {
-        get { UserDefaults.standard.string(forKey: pomodoroMusicKey) ?? "" }
+        get {
+            let raw = UserDefaults.standard.string(forKey: pomodoroMusicKey) ?? ""
+            return MusicPresets.names.contains(raw) ? raw : ""
+        }
         set { UserDefaults.standard.set(newValue, forKey: pomodoroMusicKey) }
     }
 }

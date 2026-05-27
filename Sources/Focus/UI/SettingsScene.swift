@@ -112,31 +112,34 @@ private struct GeneralTab: View {
     private var workMinutes: Int { _ = refreshTick; return Defaults.workMinutes }
     private var breakMinutes: Int { _ = refreshTick; return Defaults.breakMinutes }
 
-    private var workBinding: Binding<Int> {
+    /// Wrap a Defaults accessor in a Binding that bumps `refreshTick` on every
+    /// write, so dependent computed properties re-evaluate. Use this for the
+    /// straightforward "read X, write X, refresh" pattern; bindings with side
+    /// effects (sound cues, reapplyBlock, SMAppService) build their own.
+    private func defaultsBinding<T>(
+        get: @escaping () -> T,
+        set: @escaping (T) -> Void
+    ) -> Binding<T> {
         Binding(
-            get: { Defaults.workMinutes },
-            set: { Defaults.workMinutes = $0; refreshTick += 1 }
+            get: { _ = refreshTick; return get() },
+            set: { set($0); refreshTick += 1 }
         )
+    }
+
+    private var workBinding: Binding<Int> {
+        defaultsBinding(get: { Defaults.workMinutes }, set: { Defaults.workMinutes = $0 })
     }
     private var breakBinding: Binding<Int> {
-        Binding(
-            get: { Defaults.breakMinutes },
-            set: { Defaults.breakMinutes = $0; refreshTick += 1 }
-        )
+        defaultsBinding(get: { Defaults.breakMinutes }, set: { Defaults.breakMinutes = $0 })
     }
-
     private var blockDuringPomodoroBinding: Binding<Bool> {
-        Binding(
-            get: { _ = refreshTick; return Defaults.blockDuringPomodoro },
-            set: { Defaults.blockDuringPomodoro = $0; refreshTick += 1 }
-        )
+        defaultsBinding(get: { Defaults.blockDuringPomodoro }, set: { Defaults.blockDuringPomodoro = $0 })
     }
-
     private var autoStartBinding: Binding<Bool> {
-        Binding(
-            get: { _ = refreshTick; return Defaults.autoStartNextSession },
-            set: { Defaults.autoStartNextSession = $0; refreshTick += 1 }
-        )
+        defaultsBinding(get: { Defaults.autoStartNextSession }, set: { Defaults.autoStartNextSession = $0 })
+    }
+    private var pomodoroMusicBinding: Binding<String> {
+        defaultsBinding(get: { Defaults.pomodoroMusic }, set: { Defaults.pomodoroMusic = $0 })
     }
 
     private var phaseSoundsBinding: Binding<Bool> {
@@ -149,13 +152,6 @@ private struct GeneralTab: View {
                 // hears what kind of cue they've just enabled.
                 if newValue { Sounds.play(.sessionStart) }
             }
-        )
-    }
-
-    private var pomodoroMusicBinding: Binding<String> {
-        Binding(
-            get: { _ = refreshTick; return Defaults.pomodoroMusic },
-            set: { Defaults.pomodoroMusic = $0; refreshTick += 1 }
         )
     }
 
