@@ -21,10 +21,7 @@ struct Block: ParsableCommand {
         if sites.isEmpty {
             throw CLIError.emptyBlockList(url)
         }
-        let count = try HostsFile.apply(
-            sites: sites,
-            extraExactDomains: blockDoh ? DoHBlocklist.endpoints : []
-        )
+        let count = try SiteBlock.default.activate(sites: sites, doh: blockDoh)
         print("focus: blocked \(count) sites")
     }
 }
@@ -37,7 +34,7 @@ struct Unblock: ParsableCommand {
 
     func run() throws {
         try requireRoot()
-        try HostsFile.unblock()
+        try SiteBlock.default.deactivate()
         print("focus: unblocked")
     }
 }
@@ -61,17 +58,14 @@ struct ToggleCommand: ParsableCommand {
     func run() throws {
         try requireRoot()
         let nowActive: Bool
-        if HostsFile.isActive() {
-            try HostsFile.unblock()
+        if SiteBlock.default.isActive {
+            try SiteBlock.default.deactivate()
             nowActive = false
         } else {
             let url = try resolveBlockFile(file)
             let sites = try BlockList.load(from: url)
             if sites.isEmpty { throw CLIError.emptyBlockList(url) }
-            try HostsFile.apply(
-                sites: sites,
-                extraExactDomains: blockDoh ? DoHBlocklist.endpoints : []
-            )
+            try SiteBlock.default.activate(sites: sites, doh: blockDoh)
             nowActive = true
         }
         if json {
@@ -92,7 +86,7 @@ struct StatusCommand: ParsableCommand {
     var json: Bool = false
 
     func run() {
-        let active = HostsFile.isActive()
+        let active = SiteBlock.default.isActive
         if json {
             printJSONActive(active)
         } else {

@@ -20,7 +20,7 @@ enum BlockList {
     }
 
     /// Parse a block file. Blank lines and `#`-prefixed comments are ignored. `www.` is
-    /// stripped on input; both variants are added back at apply time by HostsFile.
+    /// stripped on input; both variants are added back at apply time by SiteBlock.
     /// Throws `InvalidEntry` for any hostname that fails validation.
     /// Make sure `~/Library/Application Support/Focus/block.txt` exists, seeding
     /// it from the bundled default on first call. Returns the user path. The UI

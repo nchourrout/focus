@@ -43,7 +43,7 @@ final class AppState: ObservableObject {
         refreshInFlight = true
         defer { refreshInFlight = false }
         let snapshot = await Task.detached {
-            (block: HostsFile.isActive(), state: PomodoroState.current)
+            (block: SiteBlock.default.isActive, state: PomodoroState.current)
         }.value
         apply(blockActive: snapshot.block, state: snapshot.state)
     }

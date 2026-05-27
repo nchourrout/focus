@@ -102,10 +102,10 @@ enum Actions {
     }
 
     /// Re-run `block` to pick up changed settings without flipping state. No-op
-    /// if the block isn't active. Idempotent: HostsFile.apply rewrites the
-    /// marker section in place.
+    /// if the block isn't active. Idempotent: activate rewrites the marker
+    /// section in place.
     static func reapplyBlock() {
-        guard HostsFile.isActive() else { return }
+        guard SiteBlock.default.isActive else { return }
         spawnSudo(["block"] + Defaults.dohSuppressionFlags)
     }
 
