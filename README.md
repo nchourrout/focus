@@ -120,11 +120,11 @@ Without Xcode, `swift build` still works; only `swift test` needs the full toolc
 Single source of truth for `CFBundleShortVersionString` is the `VERSION` file at the repo root.
 
 ```bash
-./Scripts/release.sh 0.4.0      # bumps VERSION, commits "Release v0.4.0", tags v0.4.0
-git push && git push origin v0.4.0
+./Scripts/release.sh 0.6.0      # bumps VERSION, commits "Release v0.6.0", tags v0.6.0
+git push && git push origin v0.6.0
 ```
 
-The tag push triggers `.github/workflows/release.yml`, which builds `Focus.app` on a clean macos-15 runner, zips it with `ditto`, and attaches `Focus-v0.4.0.zip` to a new GitHub Release.
+The tag push triggers `.github/workflows/release.yml`, which builds `Focus.app` on a clean macos-15 runner, zips it with `ditto`, and attaches `Focus-v0.6.0.zip` to a new GitHub Release.
 
 ## License
 

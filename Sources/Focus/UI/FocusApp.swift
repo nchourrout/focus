@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 struct FocusApp: App {
     @StateObject private var state = AppState()
@@ -36,12 +37,26 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate {
     /// the session's `block` flag) and a standalone /etc/hosts block left active
     /// by a manual toggle. Both calls are synchronous; macOS gives apps several
     /// seconds during termination.
+    ///
+    /// If the sudoers drop-in is missing, the unblock can't run — we log to
+    /// Unified Logging instead of silently leaving the user blocked without a
+    /// trace. The block will lift the next time they grant permission and
+    /// toggle.
     func applicationWillTerminate(_ notification: Notification) {
         if PomodoroSession.default.current != nil {
             PomodoroDaemon.stop()
         }
         if SiteBlock.default.isActive {
-            Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
+            guard SudoersInstaller.isInstalled else {
+                Logger(subsystem: "com.nchourrout.focus", category: "terminate")
+                    .warning("block still active on quit; sudoers drop-in missing, leaving /etc/hosts as-is")
+                return
+            }
+            let result = Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
+            if result.status != 0 {
+                Logger(subsystem: "com.nchourrout.focus", category: "terminate")
+                    .error("unblock-on-quit failed (status \(result.status, privacy: .public))")
+            }
         }
     }
 }

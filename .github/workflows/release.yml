@@ -29,7 +29,8 @@ jobs:
       - name: Verify VERSION matches tag
         run: |
           EXPECTED="${REF#v}"
-          ACTUAL="$(cat VERSION)"
+          # Strip stray CR/LF in case VERSION was committed with a Windows line ending.
+          ACTUAL="$(tr -d '\r\n' < VERSION)"
           if [[ "$EXPECTED" != "$ACTUAL" ]]; then
             echo "error: tag $REF expects VERSION=$EXPECTED but file says $ACTUAL" >&2
             exit 1
