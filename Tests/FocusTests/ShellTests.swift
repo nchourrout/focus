@@ -134,4 +134,21 @@ import Foundation
         }
         #expect(stdout.isEmpty, "no capture requested → empty stdout in callback")
     }
+
+    /// A child writing more than the kernel pipe buffer (~64 KB on macOS) used
+    /// to deadlock spawn+captureStdout: the writer blocked because nobody was
+    /// draining the read end until terminationHandler fired, and the handler
+    /// couldn't fire because the child couldn't exit. Now the pipe is drained
+    /// on a background queue as soon as spawn returns.
+    @Test func spawnCapturesStdoutLargerThanPipeBuffer() async throws {
+        let handle = try Shell.spawn(Shell.Command(
+            path: "/bin/sh",
+            ["-c", #"head -c 262144 /dev/zero | tr '\0' 'x'"#],
+            captureStdout: true
+        ))
+        let stdout: String = try await withCheckedThrowingContinuation { cont in
+            handle.onExit { _, out in cont.resume(returning: out) }
+        }
+        #expect(stdout.count == 262_144)
+    }
 }

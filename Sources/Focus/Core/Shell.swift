@@ -68,23 +68,22 @@ enum Shell {
     /// `onExit` has fired.
     final class Handle {
         let process: Process
-        private let stdoutPipe: Pipe?
+        private let stdoutDrain: PipeDrain?
 
         fileprivate init(process: Process, stdoutPipe: Pipe?) {
             self.process = process
-            self.stdoutPipe = stdoutPipe
+            self.stdoutDrain = stdoutPipe.map(PipeDrain.init)
         }
 
         var pid: Int32 { process.processIdentifier }
 
         /// Install a termination callback. Called once when the process exits;
-        /// `stdout` is the captured bytes (empty if `captureStdout` was false).
+        /// `stdout` is the captured output (empty if `captureStdout` was false).
+        /// Calling `onExit` more than once replaces the previous handler.
         func onExit(_ handler: @Sendable @escaping (_ status: Int32, _ stdout: String) -> Void) {
-            let pipe = stdoutPipe
+            let drain = stdoutDrain
             process.terminationHandler = { proc in
-                let out = pipe.flatMap {
-                    String(data: $0.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
-                } ?? ""
+                let out = drain?.collect() ?? ""
                 handler(proc.terminationStatus, out)
             }
         }
@@ -108,34 +107,23 @@ enum Shell {
             return Result(status: -1, stdout: "", stderr: "\(error)")
         }
 
-        // Drain each captured pipe on its own queue before waitUntilExit. The
-        // serial-queue ordering plus the sync read after wait establishes a
-        // happens-before for the captured Data and avoids a race.
-        var outData = Data()
-        var errData = Data()
-        let outQueue = outPipe.map { _ in DispatchQueue(label: "focus.shell.stdout-drain") }
-        let errQueue = errPipe.map { _ in DispatchQueue(label: "focus.shell.stderr-drain") }
-        if let outPipe, let outQueue {
-            outQueue.async { outData = outPipe.fileHandleForReading.readDataToEndOfFile() }
-        }
-        if let errPipe, let errQueue {
-            errQueue.async { errData = errPipe.fileHandleForReading.readDataToEndOfFile() }
-        }
-
+        // Start draining both pipes BEFORE waitUntilExit so a writer that
+        // overruns the kernel pipe buffer doesn't block while we wait.
+        let outDrain = outPipe.map(PipeDrain.init)
+        let errDrain = errPipe.map(PipeDrain.init)
         p.waitUntilExit()
 
-        let outBytes = outQueue.map { $0.sync { outData } } ?? Data()
-        let errBytes = errQueue.map { $0.sync { errData } } ?? Data()
         return Result(
             status: p.terminationStatus,
-            stdout: String(data: outBytes, encoding: .utf8) ?? "",
-            stderr: String(data: errBytes, encoding: .utf8) ?? ""
+            stdout: outDrain?.collect() ?? "",
+            stderr: errDrain?.collect() ?? ""
         )
     }
 
     /// Launch a command without waiting. Use the returned `Handle` to read the
-    /// PID, observe termination, or read captured stdout (only valid inside the
-    /// `onExit` callback).
+    /// PID, observe termination, or read captured stdout (delivered to `onExit`
+    /// once the process exits). Capture begins immediately so a chatty child
+    /// can't deadlock on a full pipe buffer before the handler fires.
     @discardableResult
     static func spawn(_ command: Command) throws -> Handle {
         let p = configured(command)
@@ -166,5 +154,25 @@ enum Shell {
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         return p
+    }
+}
+
+/// Drains a `Pipe` to EOF on a background serial queue. The async-then-sync
+/// pattern means the writer can fill the pipe past the kernel buffer without
+/// blocking, and `collect()` waits for EOF before returning — establishing a
+/// happens-before for the captured Data.
+private final class PipeDrain: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "focus.shell.pipe-drain")
+    private var data = Data()
+
+    init(_ pipe: Pipe) {
+        queue.async { [weak self] in
+            self?.data = pipe.fileHandleForReading.readDataToEndOfFile()
+        }
+    }
+
+    func collect() -> String {
+        let bytes = queue.sync { data }
+        return String(data: bytes, encoding: .utf8) ?? ""
     }
 }

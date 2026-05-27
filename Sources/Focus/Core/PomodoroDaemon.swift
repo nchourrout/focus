@@ -115,6 +115,12 @@ enum PomodoroDaemon {
             // Loop: roll deadlines and persist new state. The menu bar app
             // notices the workEnd change and emits the "Starting next session"
             // notification on its next refresh.
+            //
+            // If the state file vanished mid-loop (e.g. `pomodoro stop` raced
+            // with the break→work transition), bail out instead of writing a
+            // phantom next session. Pre-refactor code rolled deadlines
+            // unconditionally and only skipped the save; the new behavior
+            // matches stop's intent of ending the daemon cleanly.
             if let prev = session.current {
                 let next = session.nextSession(
                     after: prev,
