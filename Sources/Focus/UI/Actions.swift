@@ -66,35 +66,29 @@ enum Actions {
     /// state so the click has visible effect (the menu bar icon also changes,
     /// but only after AppState's next 1Hz refresh).
     static func toggleBlock() {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        p.arguments = ["-n", Paths.selfExecutable.path, "toggle", "--json"]
-            + Defaults.dohSuppressionFlags
-        p.standardInput = FileHandle.nullDevice
-        let outPipe = Pipe()
-        p.standardOutput = outPipe
-        p.standardError = FileHandle.nullDevice
-        p.terminationHandler = { proc in
-            if proc.terminationStatus != 0 {
-                Task { @MainActor in showSudoersMissingAlert() }
-                return
-            }
-            let stdout = String(
-                data: outPipe.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            ) ?? ""
-            let active = stdout.contains("\"active\": true")
-            Task { @MainActor in
-                LocalNotifications.post(
-                    title: active ? "Websites blocked" : "Websites unblocked",
-                    body: active
-                        ? "Distraction list is active."
-                        : "Distractions are reachable again."
-                )
-            }
-        }
+        let command = Shell.Command(
+            Paths.selfExecutable,
+            ["toggle", "--json"] + Defaults.dohSuppressionFlags,
+            sudo: true,
+            captureStdout: true
+        )
         do {
-            try p.run()
+            let handle = try Shell.spawn(command)
+            handle.onExit { status, stdout in
+                if status != 0 {
+                    Task { @MainActor in showSudoersMissingAlert() }
+                    return
+                }
+                let active = stdout.contains("\"active\": true")
+                Task { @MainActor in
+                    LocalNotifications.post(
+                        title: active ? "Websites blocked" : "Websites unblocked",
+                        body: active
+                            ? "Distraction list is active."
+                            : "Distractions are reachable again."
+                    )
+                }
+            }
         } catch {
             log.error("toggle failed to launch: \(error.localizedDescription, privacy: .public)")
             showSudoersMissingAlert()
@@ -132,29 +126,23 @@ enum Actions {
     /// Console.app filtered on subsystem `com.nchourrout.focus` when debugging.
     private static func spawn(_ args: [String]) {
         do {
-            _ = try Subprocess.launchSilent(Paths.selfExecutable, args)
+            try Shell.spawn(Shell.Command(Paths.selfExecutable, args))
         } catch {
             log.error("spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
     /// Same as `spawn` but routes through `sudo -n`. Requires the sudoers drop-in.
-    /// Uses `terminationHandler` (event-driven, no thread parking) to detect sudo
-    /// failures and surface an alert, so the user understands why the menu action
-    /// appeared to do nothing.
+    /// Uses `onExit` (event-driven, no thread parking) to detect sudo failures and
+    /// surface an alert, so the user understands why the menu action appeared to
+    /// do nothing.
     private static func spawnSudo(_ args: [String]) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        p.arguments = ["-n", Paths.selfExecutable.path] + args
-        p.standardInput = FileHandle.nullDevice
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        p.terminationHandler = { proc in
-            guard proc.terminationStatus != 0 else { return }
-            Task { @MainActor in showSudoersMissingAlert() }
-        }
         do {
-            try p.run()
+            let handle = try Shell.spawn(Shell.Command(Paths.selfExecutable, args, sudo: true))
+            handle.onExit { status, _ in
+                guard status != 0 else { return }
+                Task { @MainActor in showSudoersMissingAlert() }
+            }
         } catch {
             log.error("sudo spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             showSudoersMissingAlert()

@@ -75,7 +75,9 @@ enum SudoersInstaller {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         // Validate before prompting. A syntax error here is ours to fix, not the user's.
-        let visudo = Subprocess.runCapturingStderr("/usr/sbin/visudo", ["-cf", tmp.path])
+        let visudo = Shell.run(Shell.Command(
+            path: "/usr/sbin/visudo", ["-cf", tmp.path], captureStderr: true
+        ))
         if visudo.status != 0 {
             throw InstallError.invalidRule(visudo.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
@@ -86,7 +88,9 @@ enum SudoersInstaller {
         try assertSafe(tmp.path, field: "temp path")
         let command = "/bin/cp '\(tmp.path)' '\(dropInPath)' && /bin/chmod 0440 '\(dropInPath)'"
         let script = "do shell script \"\(escapeAppleScript(command))\" with administrator privileges"
-        let result = Subprocess.runCapturingStderr("/usr/bin/osascript", ["-e", script])
+        let result = Shell.run(Shell.Command(
+            path: "/usr/bin/osascript", ["-e", script], captureStderr: true
+        ))
         if result.status == 0 { return }
         // osascript exits 1 for any script-level error. User cancellation specifically
         // carries the `(-128)` error code in stderr ("User canceled. (-128)"), so we

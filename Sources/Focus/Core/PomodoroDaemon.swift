@@ -41,10 +41,10 @@ enum PomodoroDaemon {
             args.append(contentsOf: ["--music", music])
         }
         if !block { args.append("--no-block") }
-        let p = try Subprocess.launchSilent(Paths.selfExecutable, args)
+        let handle = try Shell.spawn(Shell.Command(Paths.selfExecutable, args))
 
         let active = PomodoroSession.Active(
-            goal: goal, pid: p.processIdentifier, startedAt: now,
+            goal: goal, pid: handle.pid, startedAt: now,
             workEnd: workEnd, breakEnd: breakEnd, music: musicURI, block: block
         )
         try session.save(active)
@@ -75,9 +75,11 @@ enum PomodoroDaemon {
 
         var blockFailed = false
         if block {
-            let blockArgs = ["-n", Paths.selfExecutable.path, "block"]
-                + Defaults.dohSuppressionFlags
-            let blocked = Subprocess.run("/usr/bin/sudo", blockArgs) == 0
+            let blocked = Shell.run(Shell.Command(
+                Paths.selfExecutable,
+                ["block"] + Defaults.dohSuppressionFlags,
+                sudo: true
+            )).status == 0
             if !blocked {
                 blockFailed = true
                 FileHandle.standardError.write(Data(
@@ -87,7 +89,7 @@ enum PomodoroDaemon {
         }
 
         if let music = music, !music.isEmpty {
-            _ = Subprocess.run(Paths.selfExecutable.path, ["music", music])
+            Shell.run(Shell.Command(Paths.selfExecutable, ["music", music]))
         }
 
         // Notifications are emitted by AppState in the menu bar app process so
@@ -154,7 +156,7 @@ enum PomodoroDaemon {
 
     private static func clearEverything(unblock: Bool) {
         if unblock {
-            _ = Subprocess.run("/usr/bin/sudo", ["-n", Paths.selfExecutable.path, "unblock"])
+            Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
         }
         // Music doesn't need root; call Core directly instead of forking the CLI.
         LocalPlayback.stop()

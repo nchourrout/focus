@@ -35,8 +35,8 @@ enum LocalPlayback {
     /// `stop()` can reach it later regardless of which mode it's in.
     private static func launch(_ executable: URL, _ arguments: [String]) throws {
         stop()
-        let p = try Subprocess.launchSilent(executable, arguments)
-        try String(p.processIdentifier).write(to: Paths.musicPid, atomically: true, encoding: .utf8)
+        let handle = try Shell.spawn(Shell.Command(executable, arguments))
+        try String(handle.pid).write(to: Paths.musicPid, atomically: true, encoding: .utf8)
     }
 
     static func stop() {
@@ -66,18 +66,8 @@ enum LocalPlayback {
         _ = Darwin.setsid()
         // Default SIGTERM terminates the process; afplay child receives it too via the group.
         while true {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
-            proc.arguments = [file]
-            proc.standardOutput = FileHandle.nullDevice
-            proc.standardError = FileHandle.nullDevice
-            do {
-                try proc.run()
-                proc.waitUntilExit()
-            } catch {
-                return
-            }
-            if proc.terminationStatus != 0 { return }
+            let result = Shell.run(Shell.Command(path: "/usr/bin/afplay", [file]))
+            if result.status != 0 { return }
         }
     }
 }
