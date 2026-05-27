@@ -47,7 +47,9 @@ import Foundation
         try rule.write(to: tmp, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let result = Subprocess.runCapturingStderr("/usr/sbin/visudo", ["-cf", tmp.path])
+        let result = Shell.run(Shell.Command(
+            path: "/usr/sbin/visudo", ["-cf", tmp.path], captureStderr: true
+        ))
         #expect(result.status == 0, "visudo rejected the generated rule:\n\(result.stderr)")
     }
 }
