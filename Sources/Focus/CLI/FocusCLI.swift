@@ -5,6 +5,7 @@ struct FocusCLI: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "focus",
         abstract: "Run pomodoros, block distractions, and play focus music on macOS.",
+        version: focusVersion(),
         subcommands: [
             Block.self,
             Unblock.self,
@@ -17,6 +18,13 @@ struct FocusCLI: ParsableCommand {
             PomodoroRun.self,
         ]
     )
+}
+
+/// App version for `focus --version`. Sourced from the bundle's Info.plist
+/// (`CFBundleShortVersionString`), which `build-app.sh` stamps from the VERSION
+/// file. Raw `swift build` binaries have no Info.plist, so report "dev".
+func focusVersion() -> String {
+    Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
 }
 
 /// Shared helper: require root for hosts-writing commands.

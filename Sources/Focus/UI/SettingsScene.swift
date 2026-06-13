@@ -196,6 +196,7 @@ private struct BlockListTab: View {
     @State private var content: String = ""
     @State private var error: String?
     @State private var loaded = false
+    @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -234,7 +235,26 @@ private struct BlockListTab: View {
             loaded = true
             load()
         }
-        .onChange(of: content) { _ in save() }
+        // Debounce: each keystroke pushed a full file write + re-parse, and the
+        // inline status flashed red on every transiently-invalid mid-edit line.
+        // Coalesce edits, then flush immediately when the window closes so the
+        // last keystrokes aren't lost.
+        .onChange(of: content) { _ in
+            saveTask?.cancel()
+            saveTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled else { return }
+                save()
+            }
+        }
+        .onDisappear {
+            // Only flush a genuinely pending edit. If load() failed, content is
+            // still "" and no edit ever fired, so saveTask is nil — don't clobber
+            // the on-disk list with an empty write.
+            guard saveTask != nil else { return }
+            saveTask?.cancel()
+            save()
+        }
     }
 
     private func load() {

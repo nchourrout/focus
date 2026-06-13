@@ -60,6 +60,8 @@ Menu actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.jso
 ## CLI
 
 ```bash
+focus --version                  # print the app version
+
 focus status                     # human-readable block status
 focus status --json              # {"active": true|false}
 

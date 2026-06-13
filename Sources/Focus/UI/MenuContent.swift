@@ -22,7 +22,11 @@ struct MenuContent: View {
             Actions.toggleBlock()
         }
 
-        Menu("Music") {
+        Menu(state.musicPlaying ? "Music ♪" : "Music") {
+            if state.musicPlaying {
+                Text("Now playing")
+                Divider()
+            }
             ForEach(MusicPresets.list, id: \.name) { preset in
                 Button(preset.name.capitalized) {
                     Actions.playMusic(preset.name)
@@ -30,6 +34,7 @@ struct MenuContent: View {
             }
             Divider()
             Button("Stop music") { Actions.stopMusic() }
+                .disabled(!state.musicPlaying)
         }
 
         Divider()

@@ -36,7 +36,8 @@ enum MusicPresets {
         var errorDescription: String? {
             switch self {
             case .unknownPreset(let name):
-                return "focus: unknown preset '\(name)'. Available: \(MusicPresets.names.joined(separator: ", ")). Or pass an http(s):// stream URL."
+                // No "focus:" prefix — surfaced via ArgumentParser's "Error: …".
+                return "unknown preset '\(name)'. Available: \(MusicPresets.names.joined(separator: ", ")). Or pass an http(s):// stream URL."
             }
         }
     }

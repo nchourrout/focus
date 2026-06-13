@@ -9,6 +9,7 @@ final class AppState: ObservableObject {
     @Published private(set) var pomodoro: PomodoroSession.Active?
     @Published private(set) var phase: PomodoroSession.Phase = .done
     @Published private(set) var blockActive: Bool = false
+    @Published private(set) var musicPlaying: Bool = false
     // No @Published timeLeft: per-second updates would also re-render the menu
     // dropdown via @ObservedObject, which resets AppKit's hover selection.
     // Views that need a live countdown drive their own ticker (TimelineView).
@@ -43,13 +44,16 @@ final class AppState: ObservableObject {
         refreshInFlight = true
         defer { refreshInFlight = false }
         let snapshot = await Task.detached {
-            (block: SiteBlock.default.isActive, state: PomodoroSession.default.current)
+            (block: SiteBlock.default.isActive,
+             state: PomodoroSession.default.current,
+             music: LocalPlayback.isPlaying)
         }.value
-        apply(blockActive: snapshot.block, state: snapshot.state)
+        apply(blockActive: snapshot.block, state: snapshot.state, musicPlaying: snapshot.music)
     }
 
-    private func apply(blockActive newBlock: Bool, state: PomodoroSession.Active?) {
+    private func apply(blockActive newBlock: Bool, state: PomodoroSession.Active?, musicPlaying newMusic: Bool) {
         if newBlock != blockActive { blockActive = newBlock }
+        if newMusic != musicPlaying { musicPlaying = newMusic }
 
         let prevPomodoro = pomodoro
         let prevPhase = phase

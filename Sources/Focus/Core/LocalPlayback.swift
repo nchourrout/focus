@@ -39,11 +39,25 @@ enum LocalPlayback {
         try String(handle.pid).write(to: Paths.musicPid, atomically: true, encoding: .utf8)
     }
 
+    /// Read and parse the tracked playback PID, or nil if the file is absent or
+    /// malformed. Shared by `isPlaying` and `stop()`.
+    private static func trackedPID() -> Int32? {
+        guard let text = try? String(contentsOf: Paths.musicPid, encoding: .utf8) else {
+            return nil
+        }
+        return Int32(text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// True if a tracked playback process is currently alive. Reads the same PID
+    /// file `stop()` uses, so it reflects playback started by the CLI, the
+    /// pomodoro daemon, or the menu bar alike — not just this process.
+    static var isPlaying: Bool {
+        guard let pid = trackedPID() else { return false }
+        return isPIDAlive(pid)
+    }
+
     static func stop() {
-        guard FileManager.default.fileExists(atPath: Paths.musicPid.path),
-              let text = try? String(contentsOf: Paths.musicPid, encoding: .utf8),
-              let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)),
-              pid > 0 else {
+        guard let pid = trackedPID(), pid > 0 else {
             try? FileManager.default.removeItem(at: Paths.musicPid)
             return
         }
