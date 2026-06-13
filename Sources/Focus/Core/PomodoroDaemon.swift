@@ -73,15 +73,16 @@ enum PomodoroDaemon {
         signal(SIGHUP, SIG_IGN)
         _ = Darwin.setsid()
 
-        var blockFailed = false
         if block {
             let blocked = Shell.run(Shell.Command(
                 Paths.selfExecutable,
                 ["block"] + Defaults.dohSuppressionFlags,
                 sudo: true
             )).status == 0
+            // The UI can't surface a daemon-side sudo failure, so warn here. This
+            // is the daemon's only console side effect (everything else flows
+            // through the state file, which AppState reads).
             if !blocked {
-                blockFailed = true
                 FileHandle.standardError.write(Data(
                     "focus: warning — sudo -n block failed. Is /etc/sudoers.d/focus installed?\n".utf8
                 ))
@@ -90,16 +91,6 @@ enum PomodoroDaemon {
 
         if let music = music, !music.isEmpty {
             Shell.run(Shell.Command(Paths.selfExecutable, ["music", music]))
-        }
-
-        // Notifications are emitted by AppState in the menu bar app process so
-        // the Focus icon shows on the banner. The daemon doesn't post — its
-        // only side effect here is the state file (and the block warning below
-        // when sudo -n fails, since the UI can't surface that condition).
-        if blockFailed {
-            FileHandle.standardError.write(Data(
-                "focus: warning — sudo -n block failed. Run install-sudoers.\n".utf8
-            ))
         }
 
         let session = PomodoroSession.default
@@ -184,18 +175,20 @@ enum CLIError: Error, LocalizedError {
     case missingFile(URL)
     case missingMusicSource
 
+    // No "focus:" prefix — ArgumentParser frames thrown errors as "Error: …",
+    // and a doubled "Error: focus: …" reads badly.
     var errorDescription: String? {
         switch self {
         case .alreadyRunning:
-            return "focus: a pomodoro is already running. Stop it first."
+            return "a pomodoro is already running. Stop it first."
         case .notRoot:
-            return "focus: this command needs sudo (it writes /etc/hosts)"
+            return "this command needs sudo (it writes /etc/hosts)"
         case .emptyBlockList(let url):
-            return "focus: \(url.path) is empty"
+            return "\(url.path) is empty"
         case .missingFile(let url):
-            return "focus: file not found: \(url.path)"
+            return "file not found: \(url.path)"
         case .missingMusicSource:
-            return "focus: no music source. Pass a preset name, --uri, --file, or set FOCUS_MUSIC_URI. See `focus music --list`."
+            return "no music source. Pass a preset name, --uri, --file, or set FOCUS_MUSIC_URI. See `focus music --list`."
         }
     }
 }

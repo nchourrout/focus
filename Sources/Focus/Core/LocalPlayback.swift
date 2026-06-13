@@ -39,6 +39,17 @@ enum LocalPlayback {
         try String(handle.pid).write(to: Paths.musicPid, atomically: true, encoding: .utf8)
     }
 
+    /// True if a tracked playback process is currently alive. Reads the same PID
+    /// file `stop()` uses, so it reflects playback started by the CLI, the
+    /// pomodoro daemon, or the menu bar alike — not just this process.
+    static var isPlaying: Bool {
+        guard let text = try? String(contentsOf: Paths.musicPid, encoding: .utf8),
+              let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return false
+        }
+        return isPIDAlive(pid)
+    }
+
     static func stop() {
         guard FileManager.default.fileExists(atPath: Paths.musicPid.path),
               let text = try? String(contentsOf: Paths.musicPid, encoding: .utf8),
