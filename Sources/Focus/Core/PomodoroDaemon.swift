@@ -20,8 +20,12 @@ enum PomodoroDaemon {
         }
 
         let now = Date().timeIntervalSince1970
+        // Session 1's break follows the same cadence as the rest: short unless the
+        // user set sessionsBeforeLongBreak to 1, in which case every break is long.
+        let firstLong = session.hasLongBreak(sessionNumber: 1, every: Defaults.sessionsBeforeLongBreak)
         let (workEnd, breakEnd) = session.deadlines(
-            workMinutes: workMinutes, breakMinutes: breakMinutes, at: now
+            workMinutes: workMinutes,
+            breakMinutes: firstLong ? Defaults.longBreakMinutes : breakMinutes, at: now
         )
         // Single source of truth for preset / env-var resolution. Fails fast on unknown preset.
         let musicURI = try MusicPresets.resolve(target: music, explicitURI: nil)
@@ -45,7 +49,8 @@ enum PomodoroDaemon {
 
         let active = PomodoroSession.Active(
             goal: goal, pid: handle.pid, startedAt: now,
-            workEnd: workEnd, breakEnd: breakEnd, music: musicURI, block: block
+            workEnd: workEnd, breakEnd: breakEnd, music: musicURI, block: block,
+            sessionNumber: 1, isLongBreak: firstLong
         )
         try session.save(active)
 
@@ -113,9 +118,13 @@ enum PomodoroDaemon {
             // unconditionally and only skipped the save; the new behavior
             // matches stop's intent of ending the daemon cleanly.
             if let prev = session.current {
+                // Long-break cadence is re-read each iteration so Settings changes
+                // take effect at the next boundary, matching autoStart's behavior.
                 let next = session.nextSession(
                     after: prev,
-                    workMinutes: workMinutes, breakMinutes: breakMinutes
+                    workMinutes: workMinutes, breakMinutes: breakMinutes,
+                    longBreakMinutes: Defaults.longBreakMinutes,
+                    sessionsBeforeLongBreak: Defaults.sessionsBeforeLongBreak
                 )
                 try? session.save(next)
                 currentWorkEnd = next.workEnd

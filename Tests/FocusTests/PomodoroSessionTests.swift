@@ -62,6 +62,26 @@ import Foundation
         #expect(decoded.block == true, "files predating the `block` field decode as block=true")
     }
 
+    @Test func decodeMissingSessionNumberDefaultsOne() throws {
+        let legacy = """
+        {"goal":"g","pid":1,"started_at":0,"work_end":10,"break_end":20,"music":"","block":true}
+        """
+        let data = Data(legacy.utf8)
+        let decoded = try JSONDecoder().decode(PomodoroSession.Active.self, from: data)
+        #expect(decoded.sessionNumber == 1, "files predating session_number decode as session 1")
+    }
+
+    @Test func sessionNumberRoundtrips() throws {
+        #expect(makeActive().sessionNumber == 1, "makeActive defaults to session 1")
+        var s = makeActive()
+        s.sessionNumber = 3
+        let data = try JSONEncoder().encode(s)
+        let obj = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(obj["session_number"] as? Int == 3)
+        let decoded = try JSONDecoder().decode(PomodoroSession.Active.self, from: data)
+        #expect(decoded.sessionNumber == 3)
+    }
+
     // MARK: Phase derivation
 
     @Test func phaseLogic() throws {
@@ -107,6 +127,65 @@ import Foundation
         #expect(next.startedAt == 2000)
         #expect(next.workEnd == 2000 + 25 * 60)
         #expect(next.breakEnd == next.workEnd + 5 * 60)
+    }
+
+    @Test func nextSessionAdvancesSessionNumber() throws {
+        let (session, _) = try makeSandbox()
+        var s = makeActive()
+        #expect(s.sessionNumber == 1)
+        s = session.nextSession(after: s, workMinutes: 25, breakMinutes: 5, at: 0)
+        #expect(s.sessionNumber == 2)
+        s = session.nextSession(after: s, workMinutes: 25, breakMinutes: 5, at: 0)
+        #expect(s.sessionNumber == 3)
+    }
+
+    // MARK: Long-break cadence
+
+    @Test func longBreakLandsOnEveryNthSession() throws {
+        let (session, _) = try makeSandbox()
+        // every == 4: sessions 4, 8, 12 earn the long break; the rest are short.
+        for n in 1...12 {
+            let expected = (n % 4 == 0)
+            #expect(session.hasLongBreak(sessionNumber: n, every: 4) == expected,
+                    "session \(n) long-break expectation")
+        }
+    }
+
+    @Test func everyZeroDisablesLongBreaks() throws {
+        let (session, _) = try makeSandbox()
+        #expect(!session.hasLongBreak(sessionNumber: 4, every: 0))
+        // With long breaks disabled, rolling never flips isLongBreak or lengthens it.
+        var s = makeActive(workEnd: 0, breakEnd: 0)
+        s.sessionNumber = 3
+        let next = session.nextSession(after: s, workMinutes: 25, breakMinutes: 5, at: 1000)
+        #expect(!next.isLongBreak)
+        #expect(next.breakEnd == next.workEnd + 5 * 60)
+    }
+
+    @Test func nextSessionRollsLongBreakOnCadence() throws {
+        let (session, _) = try makeSandbox()
+        // prev is session 3; rolling forward produces session 4, which earns the
+        // 15-minute long break instead of the 5-minute short one, and records it.
+        var s = makeActive(workEnd: 0, breakEnd: 0)
+        s.sessionNumber = 3
+        let next = session.nextSession(
+            after: s, workMinutes: 25, breakMinutes: 5,
+            longBreakMinutes: 15, sessionsBeforeLongBreak: 4, at: 1000
+        )
+        #expect(next.sessionNumber == 4)
+        #expect(next.isLongBreak, "session 4 is flagged as a long break")
+        #expect(next.workEnd == 1000 + 25 * 60)
+        #expect(next.breakEnd == next.workEnd + 15 * 60, "session 4 gets the long break")
+
+        // Session 3 (non-boundary) stays short and unflagged.
+        var t = makeActive(workEnd: 0, breakEnd: 0)
+        t.sessionNumber = 2
+        let three = session.nextSession(
+            after: t, workMinutes: 25, breakMinutes: 5,
+            longBreakMinutes: 15, sessionsBeforeLongBreak: 4, at: 1000
+        )
+        #expect(!three.isLongBreak)
+        #expect(three.breakEnd == three.workEnd + 5 * 60)
     }
 
     // MARK: Persistence — round-trip against an injected stateURL

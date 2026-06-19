@@ -91,7 +91,8 @@ extension Pomodoro {
                     phase: phase.rawValue,
                     time_left: Int(timeLeft.rounded()),
                     work_end: state.workEnd,
-                    break_end: state.breakEnd
+                    break_end: state.breakEnd,
+                    session: state.sessionNumber
                 )
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = .sortedKeys
@@ -100,7 +101,8 @@ extension Pomodoro {
             } else {
                 let mins = Int(timeLeft) / 60
                 let secs = Int(timeLeft) % 60
-                print(String(format: "focus: %@ — %d:%02d left — %@", phase.rawValue, mins, secs, state.goal))
+                print(String(format: "focus: %@ — %d:%02d left — session %d — %@",
+                             phase.rawValue, mins, secs, state.sessionNumber, state.goal))
             }
         }
 
@@ -111,6 +113,7 @@ extension Pomodoro {
             let time_left: Int
             let work_end: TimeInterval
             let break_end: TimeInterval
+            let session: Int
         }
     }
 }

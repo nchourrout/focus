@@ -56,10 +56,36 @@ enum Defaults {
 
     /// When on, the pomodoro daemon loops: after the break, it starts another
     /// work/break cycle with the same goal/durations instead of clearing state.
-    /// Default off.
+    /// Default on — like every other pomodoro app, Focus keeps the cadence going
+    /// (work → break → work …) until you stop it. Use `object(forKey:)` so an
+    /// unset key reads as the default (true), not `bool`'s on-absence false.
     static var autoStartNextSession: Bool {
-        get { UserDefaults.standard.bool(forKey: autoStartKey) }
+        get { UserDefaults.standard.object(forKey: autoStartKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: autoStartKey) }
+    }
+
+    private static let longBreakKey = "longBreakMinutes"
+
+    /// Minutes for the longer break taken every `sessionsBeforeLongBreak`
+    /// sessions. Default 15 (classic Pomodoro long break).
+    static var longBreakMinutes: Int {
+        get {
+            let v = UserDefaults.standard.integer(forKey: longBreakKey)
+            return v > 0 ? v : 15
+        }
+        set { UserDefaults.standard.set(max(1, newValue), forKey: longBreakKey) }
+    }
+
+    private static let sessionsBeforeLongBreakKey = "sessionsBeforeLongBreak"
+
+    /// How many work sessions to complete before the long break replaces the
+    /// short one. Default 4 (the canonical pomodoro cadence).
+    static var sessionsBeforeLongBreak: Int {
+        get {
+            let v = UserDefaults.standard.integer(forKey: sessionsBeforeLongBreakKey)
+            return v > 0 ? v : 4
+        }
+        set { UserDefaults.standard.set(max(1, newValue), forKey: sessionsBeforeLongBreakKey) }
     }
 
     private static let phaseSoundsKey = "playPhaseSounds"

@@ -42,8 +42,13 @@ private struct GeneralTab: View {
                     Text("Block websites during pomodoro")
                 }
                 Toggle(isOn: autoStartBinding) {
-                    Text("Auto-start next session after break")
+                    Text("Keep cycling sessions until I stop")
                 }
+                HStack(spacing: 16) {
+                    Stepper("Long break \(longBreakMinutes) min", value: longBreakBinding, in: 1...60)
+                    Stepper("after every \(sessionsBeforeLongBreak)", value: sessionsBinding, in: 1...12)
+                }
+                .disabled(!Defaults.autoStartNextSession)
                 Toggle(isOn: phaseSoundsBinding) {
                     Text("Play sound at phase transitions")
                 }
@@ -111,6 +116,8 @@ private struct GeneralTab: View {
 
     private var workMinutes: Int { _ = refreshTick; return Defaults.workMinutes }
     private var breakMinutes: Int { _ = refreshTick; return Defaults.breakMinutes }
+    private var longBreakMinutes: Int { _ = refreshTick; return Defaults.longBreakMinutes }
+    private var sessionsBeforeLongBreak: Int { _ = refreshTick; return Defaults.sessionsBeforeLongBreak }
 
     /// Wrap a Defaults accessor in a Binding that bumps `refreshTick` on every
     /// write, so dependent computed properties re-evaluate. Use this for the
@@ -137,6 +144,12 @@ private struct GeneralTab: View {
     }
     private var autoStartBinding: Binding<Bool> {
         defaultsBinding(get: { Defaults.autoStartNextSession }, set: { Defaults.autoStartNextSession = $0 })
+    }
+    private var longBreakBinding: Binding<Int> {
+        defaultsBinding(get: { Defaults.longBreakMinutes }, set: { Defaults.longBreakMinutes = $0 })
+    }
+    private var sessionsBinding: Binding<Int> {
+        defaultsBinding(get: { Defaults.sessionsBeforeLongBreak }, set: { Defaults.sessionsBeforeLongBreak = $0 })
     }
     private var pomodoroMusicBinding: Binding<String> {
         defaultsBinding(get: { Defaults.pomodoroMusic }, set: { Defaults.pomodoroMusic = $0 })

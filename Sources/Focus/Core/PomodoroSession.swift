@@ -26,17 +26,30 @@ struct PomodoroSession {
         var music: String?
         /// Whether the daemon should block /etc/hosts for the duration of the session.
         var block: Bool
+        /// 1-based index of this work phase within the current run. Drives the
+        /// long-break cadence (every Nth session earns the longer break) and the
+        /// "session 3" affordances in the UI. Files predating this field decode
+        /// as 1.
+        var sessionNumber: Int
+        /// Whether the break that follows this work phase is the long one. Decided
+        /// once, when the session is scheduled, so the UI labels the break that was
+        /// actually planned — not whatever the cadence setting reads right now (the
+        /// user may change it mid-run). Files predating this field decode as false.
+        var isLongBreak: Bool
 
         enum CodingKeys: String, CodingKey {
             case goal, pid, music, block
             case startedAt = "started_at"
             case workEnd = "work_end"
             case breakEnd = "break_end"
+            case sessionNumber = "session_number"
+            case isLongBreak = "is_long_break"
         }
 
         init(goal: String, pid: Int32, startedAt: TimeInterval,
              workEnd: TimeInterval, breakEnd: TimeInterval,
-             music: String?, block: Bool) {
+             music: String?, block: Bool,
+             sessionNumber: Int = 1, isLongBreak: Bool = false) {
             self.goal = goal
             self.pid = pid
             self.startedAt = startedAt
@@ -44,6 +57,8 @@ struct PomodoroSession {
             self.breakEnd = breakEnd
             self.music = music
             self.block = block
+            self.sessionNumber = sessionNumber
+            self.isLongBreak = isLongBreak
         }
 
         init(from decoder: Decoder) throws {
@@ -56,6 +71,8 @@ struct PomodoroSession {
             let raw = try c.decodeIfPresent(String.self, forKey: .music) ?? ""
             music = raw.isEmpty ? nil : raw
             block = try c.decodeIfPresent(Bool.self, forKey: .block) ?? true
+            sessionNumber = try c.decodeIfPresent(Int.self, forKey: .sessionNumber) ?? 1
+            isLongBreak = try c.decodeIfPresent(Bool.self, forKey: .isLongBreak) ?? false
         }
 
         func encode(to encoder: Encoder) throws {
@@ -67,6 +84,8 @@ struct PomodoroSession {
             try c.encode(breakEnd, forKey: .breakEnd)
             try c.encode(music ?? "", forKey: .music)
             try c.encode(block, forKey: .block)
+            try c.encode(sessionNumber, forKey: .sessionNumber)
+            try c.encode(isLongBreak, forKey: .isLongBreak)
         }
     }
 
@@ -111,17 +130,33 @@ struct PomodoroSession {
         return (workEnd, breakEnd)
     }
 
+    // MARK: Long-break cadence
+
+    /// Whether the break following the 1-based work session `n` is the long
+    /// break: every `every`-th session earns it (the classic "long break after
+    /// 4 pomodoros"). `every <= 0` disables long breaks entirely.
+    func hasLongBreak(sessionNumber n: Int, every: Int) -> Bool {
+        every > 0 && n % every == 0
+    }
+
     /// Roll an Active into the next iteration of the same session (auto-start).
-    /// Goal, pid, music, block are carried over; deadlines are recomputed from
-    /// `at`. The pid stays — the daemon is still the same process.
+    /// Goal, pid, music, block are carried over; `sessionNumber` advances and the
+    /// break follows the long-break cadence (its length and the recorded
+    /// `isLongBreak` flag); deadlines are recomputed from `at`. The pid stays —
+    /// the daemon is still the same process.
     func nextSession(after prev: Active, workMinutes: Int, breakMinutes: Int,
+                     longBreakMinutes: Int = 0, sessionsBeforeLongBreak: Int = 0,
                      at start: TimeInterval = Date().timeIntervalSince1970) -> Active {
-        let (workEnd, breakEnd) = deadlines(workMinutes: workMinutes,
-                                            breakMinutes: breakMinutes, at: start)
+        let sessionNumber = prev.sessionNumber + 1
+        let long = hasLongBreak(sessionNumber: sessionNumber, every: sessionsBeforeLongBreak)
+        let (workEnd, breakEnd) = deadlines(
+            workMinutes: workMinutes, breakMinutes: long ? longBreakMinutes : breakMinutes, at: start
+        )
         return Active(
             goal: prev.goal, pid: prev.pid, startedAt: start,
             workEnd: workEnd, breakEnd: breakEnd,
-            music: prev.music, block: prev.block
+            music: prev.music, block: prev.block,
+            sessionNumber: sessionNumber, isLongBreak: long
         )
     }
 }

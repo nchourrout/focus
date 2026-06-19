@@ -10,7 +10,7 @@ A macOS menu bar app + CLI to get in the zone.
 
 - **Block distracting websites** by editing `/etc/hosts`
 - **Play focus music** from free, ad-free [SomaFM](https://somafm.com) streams (Drone Zone, Groove Salad, Mission Control, …) — or any HTTP(S) audio stream URL, or a local audio file
-- **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up automatically
+- **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up automatically. By default it keeps cycling (work → break → work …) with a longer break after every 4 sessions, until you stop it
 - **Global hotkeys** for start/stop pomodoro and toggle block, configurable in Settings
 - **Launch at login** toggle via `SMAppService`
 - One Swift binary is both the menu bar app (run with no args) and the CLI (run with a subcommand)
@@ -52,7 +52,7 @@ Click the icon for a dropdown:
 - **Start pomodoro…** — prompts for a goal; replaced by **Stop pomodoro** while running
 - **Block / Unblock websites** — toggles `/etc/hosts` (uses the sudoers drop-in)
 - **Music** submenu — any preset, or Stop
-- **Settings…** — tabbed window: General (durations, launch at login, sounds, music preset), Shortcuts (global hotkey recorders), Block list (the sites edited inline)
+- **Settings…** — tabbed window: General (work/break/long-break durations, session-cycling, launch at login, sounds, music preset), Shortcuts (global hotkey recorders), Block list (the sites edited inline)
 - **Quit Focus**
 
 Menu actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.json` stays the single source of truth. The menu bar polls it once a second.
@@ -75,10 +75,13 @@ focus music https://stream.url   # any HTTP(S) audio stream
 focus music --file ~/brown.mp3 --loop
 focus music --stop
 
-focus pomodoro start "write spec"                 # 25min work, 5min break
+focus pomodoro start "write spec"                 # 25min work, 5min break, cycles until stopped
 focus pomodoro start "deep work" --work 50 --break 10 --music groovesalad
 focus pomodoro status                             # add --json for machine-readable
 focus pomodoro stop
+
+# Session cycling and the long break (every 4th break, 15min by default) are
+# configured in Settings → General. Turn cycling off there for one-and-done runs.
 ```
 
 **Music sources**:
@@ -102,7 +105,7 @@ The generated rule whitelists `block`, `unblock`, and `toggle` against the Focus
 
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
-- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block)
+- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break)
 - `~/.focus-music.pid` — afplay PID for `--stop`
 
 ## Testing

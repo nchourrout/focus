@@ -102,15 +102,21 @@ final class AppState: ObservableObject {
         }
         // Auto-start loop: break → fresh work (workEnd advanced).
         if prevPhase == .break, currPhase == .work, let s = currPomo {
-            LocalNotifications.post(title: "Starting next session", body: s.goal, sound: nil)
+            LocalNotifications.post(
+                title: "Session \(s.sessionNumber)", body: s.goal, sound: nil
+            )
             Sounds.play(.sessionStart)
             return
         }
-        // Work → break.
+        // Work → break. Every Nth session earns the longer break, decided when the
+        // session was scheduled (Active.isLongBreak), so the label matches the
+        // break that was actually planned.
         if prevPhase == .work, currPhase == .break, let s = currPomo {
             LocalNotifications.post(
-                title: "Pomodoro complete",
-                body: "Finished: \(s.goal). Break time.",
+                title: s.isLongBreak ? "Long break" : "Pomodoro complete",
+                body: s.isLongBreak
+                    ? "\(s.sessionNumber) sessions done — take a longer break."
+                    : "Finished: \(s.goal). Break time.",
                 sound: nil
             )
             Sounds.play(.breakStart)
