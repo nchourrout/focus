@@ -88,6 +88,18 @@ enum Defaults {
         set { UserDefaults.standard.set(max(1, newValue), forKey: sessionsBeforeLongBreakKey) }
     }
 
+    private static let stopAfterSetKey = "stopAfterSet"
+
+    /// When on (and cycling is enabled), the daemon stops at the end of each
+    /// set — every `sessionsBeforeLongBreak` work sessions — instead of taking
+    /// the long break and continuing. It skips that final break, cleans up, and
+    /// the menu bar app posts a notification offering to start another set.
+    /// Default off, so existing users keep the continuous long-break cadence.
+    static var stopAfterSet: Bool {
+        get { UserDefaults.standard.object(forKey: stopAfterSetKey) as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: stopAfterSetKey) }
+    }
+
     private static let phaseSoundsKey = "playPhaseSounds"
 
     /// When on, the menu bar app plays an `NSSound` cue at each phase boundary

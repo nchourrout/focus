@@ -36,6 +36,12 @@ struct PomodoroSession {
         /// actually planned — not whatever the cadence setting reads right now (the
         /// user may change it mid-run). Files predating this field decode as false.
         var isLongBreak: Bool
+        /// Terminal marker: the daemon set this set's last work phase as the end
+        /// of a "stop after each set" run and exited (skipping the final break).
+        /// The menu bar app reads it to post the "start another set" notification,
+        /// then clears the file. Always false on a live session. Files predating
+        /// this field decode as false.
+        var setComplete: Bool
 
         enum CodingKeys: String, CodingKey {
             case goal, pid, music, block
@@ -44,12 +50,14 @@ struct PomodoroSession {
             case breakEnd = "break_end"
             case sessionNumber = "session_number"
             case isLongBreak = "is_long_break"
+            case setComplete = "set_complete"
         }
 
         init(goal: String, pid: Int32, startedAt: TimeInterval,
              workEnd: TimeInterval, breakEnd: TimeInterval,
              music: String?, block: Bool,
-             sessionNumber: Int = 1, isLongBreak: Bool = false) {
+             sessionNumber: Int = 1, isLongBreak: Bool = false,
+             setComplete: Bool = false) {
             self.goal = goal
             self.pid = pid
             self.startedAt = startedAt
@@ -59,6 +67,7 @@ struct PomodoroSession {
             self.block = block
             self.sessionNumber = sessionNumber
             self.isLongBreak = isLongBreak
+            self.setComplete = setComplete
         }
 
         init(from decoder: Decoder) throws {
@@ -73,6 +82,7 @@ struct PomodoroSession {
             block = try c.decodeIfPresent(Bool.self, forKey: .block) ?? true
             sessionNumber = try c.decodeIfPresent(Int.self, forKey: .sessionNumber) ?? 1
             isLongBreak = try c.decodeIfPresent(Bool.self, forKey: .isLongBreak) ?? false
+            setComplete = try c.decodeIfPresent(Bool.self, forKey: .setComplete) ?? false
         }
 
         func encode(to encoder: Encoder) throws {
@@ -86,6 +96,7 @@ struct PomodoroSession {
             try c.encode(block, forKey: .block)
             try c.encode(sessionNumber, forKey: .sessionNumber)
             try c.encode(isLongBreak, forKey: .isLongBreak)
+            try c.encode(setComplete, forKey: .setComplete)
         }
     }
 
@@ -157,6 +168,23 @@ struct PomodoroSession {
             workEnd: workEnd, breakEnd: breakEnd,
             music: prev.music, block: prev.block,
             sessionNumber: sessionNumber, isLongBreak: long
+        )
+    }
+
+    /// Terminal marker written when a "stop after each set" run ends: the same
+    /// session, with both deadlines pulled back to `at` (so `phase(of:)` reads
+    /// `.done`) and `setComplete` flipped on. The menu bar app posts the
+    /// "start another set" notification off this and then clears the file.
+    func completedSet(from prev: Active,
+                      at end: TimeInterval = Date().timeIntervalSince1970) -> Active {
+        Active(
+            goal: prev.goal, pid: prev.pid, startedAt: prev.startedAt,
+            workEnd: end, breakEnd: end,
+            music: prev.music, block: prev.block,
+            // No break follows a set-complete marker, so isLongBreak is moot — keep
+            // it false rather than carrying a flag for a break that never happens.
+            sessionNumber: prev.sessionNumber, isLongBreak: false,
+            setComplete: true
         )
     }
 }

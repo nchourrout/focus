@@ -188,6 +188,49 @@ import Foundation
         #expect(three.breakEnd == three.workEnd + 5 * 60)
     }
 
+    // MARK: Stop-after-set marker
+
+    @Test func completedSetMarksDoneAndCarriesContext() throws {
+        let (session, _) = try makeSandbox()
+        var prev = makeActive(
+            goal: "ship", pid: 777, startedAt: 100,
+            workEnd: 1600, breakEnd: 1900, music: "soma", block: false
+        )
+        prev.sessionNumber = 4
+        prev.isLongBreak = true
+
+        let marker = session.completedSet(from: prev, at: 1600)
+        #expect(marker.setComplete)
+        // Both deadlines pulled back to `at`, so the phase reads .done.
+        #expect(marker.workEnd == 1600)
+        #expect(marker.breakEnd == 1600)
+        #expect(session.phase(of: marker, at: 1600).phase == .done)
+        // Goal/pid/music/block/session carry over for the "start another set" prompt.
+        #expect(marker.goal == prev.goal)
+        #expect(marker.pid == prev.pid)
+        #expect(marker.music == prev.music)
+        #expect(marker.block == prev.block)
+        #expect(marker.sessionNumber == prev.sessionNumber)
+    }
+
+    @Test func setCompleteDefaultsFalseAndRoundtrips() throws {
+        // Files predating the field decode as false.
+        let legacy = """
+        {"goal":"g","pid":1,"started_at":0,"work_end":10,"break_end":20,"music":""}
+        """
+        let decodedLegacy = try JSONDecoder().decode(
+            PomodoroSession.Active.self, from: Data(legacy.utf8)
+        )
+        #expect(!decodedLegacy.setComplete)
+
+        // And a true value survives an encode/decode round-trip.
+        let (session, _) = try makeSandbox()
+        let marker = session.completedSet(from: makeActive(), at: 0)
+        let data = try JSONEncoder().encode(marker)
+        let decoded = try JSONDecoder().decode(PomodoroSession.Active.self, from: data)
+        #expect(decoded.setComplete)
+    }
+
     // MARK: Persistence — round-trip against an injected stateURL
 
     @Test func currentIsNilOnMissingFile() throws {

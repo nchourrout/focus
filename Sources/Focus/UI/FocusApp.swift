@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 import os
 
 struct FocusApp: App {
@@ -25,11 +26,58 @@ struct FocusApp: App {
 
 /// NSApp is only guaranteed wired up once the app has launched, so activation-
 /// policy and hotkey-registration side effects live here rather than in init().
-final class FocusAppDelegate: NSObject, NSApplicationDelegate {
+final class FocusAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         HotKeys.registerAll()
+        // Become the notification delegate before registering categories so the
+        // "Start another set" action routes back here. Categories must be set up
+        // before any set-complete notification could fire.
+        UNUserNotificationCenter.current().delegate = self
+        LocalNotifications.registerCategories()
         LocalNotifications.requestAuthorization()
+    }
+
+    /// Show banners even when Focus is the frontmost app (e.g. Settings open).
+    /// Without an explicit handler, a foreground app suppresses its own banners.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .list])
+    }
+
+    /// Handle the set-complete actions. "Start another set" reuses the previous
+    /// goal; "New goal…" starts the next set with the typed text (falling back to
+    /// the previous goal if the field was submitted empty). Both relaunch with the
+    /// user's current settings. Other responses (default tap, dismiss) do nothing.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let previousGoal = response.notification.request.content
+            .userInfo[LocalNotifications.goalUserInfoKey] as? String
+
+        let goal: String?
+        switch response.actionIdentifier {
+        case LocalNotifications.startAnotherSetAction:
+            goal = previousGoal
+        case LocalNotifications.newGoalAction:
+            let typed = (response as? UNTextInputNotificationResponse)?
+                .userText.trimmingCharacters(in: .whitespacesAndNewlines)
+            goal = (typed?.isEmpty == false) ? typed : previousGoal
+        default:
+            goal = nil
+        }
+
+        // `goal` is already non-empty when set: previousGoal comes from a live
+        // session (goals can't be empty) and the typed branch falls back to it.
+        if let goal {
+            Task { @MainActor in Actions.startPomodoro(goal: goal) }
+        }
+        completionHandler()
     }
 
     /// Cleanly tear down anything that would otherwise outlive the menu bar app:

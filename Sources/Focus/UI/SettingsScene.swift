@@ -13,7 +13,11 @@ struct SettingsContent: View {
             BlockListTab()
                 .tabItem { Label("Block list", systemImage: "nosign") }
         }
-        .frame(width: 480, height: 460)
+        // Sized to fit the General tab's content (its tallest). When the content
+        // fits, the vertical scroll never engages, so its scrollbar can't steal
+        // horizontal width and cause the slight left/right drift. The ScrollView
+        // stays as a safety net for very large accessibility text sizes.
+        .frame(width: 480, height: 580)
     }
 }
 
@@ -46,7 +50,13 @@ private struct GeneralTab: View {
                 }
                 HStack(spacing: 16) {
                     Stepper("Long break \(longBreakMinutes) min", value: longBreakBinding, in: 1...60)
+                        // Replaced by the stop-and-ask prompt at the set boundary.
+                        .disabled(stopAfterSet)
                     Stepper("after every \(sessionsBeforeLongBreak)", value: sessionsBinding, in: 1...12)
+                }
+                .disabled(!Defaults.autoStartNextSession)
+                Toggle(isOn: stopAfterSetBinding) {
+                    Text("Stop after each set and ask to continue")
                 }
                 .disabled(!Defaults.autoStartNextSession)
                 Toggle(isOn: phaseSoundsBinding) {
@@ -118,6 +128,7 @@ private struct GeneralTab: View {
     private var breakMinutes: Int { _ = refreshTick; return Defaults.breakMinutes }
     private var longBreakMinutes: Int { _ = refreshTick; return Defaults.longBreakMinutes }
     private var sessionsBeforeLongBreak: Int { _ = refreshTick; return Defaults.sessionsBeforeLongBreak }
+    private var stopAfterSet: Bool { _ = refreshTick; return Defaults.stopAfterSet }
 
     /// Wrap a Defaults accessor in a Binding that bumps `refreshTick` on every
     /// write, so dependent computed properties re-evaluate. Use this for the
@@ -144,6 +155,9 @@ private struct GeneralTab: View {
     }
     private var autoStartBinding: Binding<Bool> {
         defaultsBinding(get: { Defaults.autoStartNextSession }, set: { Defaults.autoStartNextSession = $0 })
+    }
+    private var stopAfterSetBinding: Binding<Bool> {
+        defaultsBinding(get: { Defaults.stopAfterSet }, set: { Defaults.stopAfterSet = $0 })
     }
     private var longBreakBinding: Binding<Int> {
         defaultsBinding(get: { Defaults.longBreakMinutes }, set: { Defaults.longBreakMinutes = $0 })

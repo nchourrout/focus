@@ -104,6 +104,22 @@ enum PomodoroDaemon {
 
         while true {
             sleepUntil(currentWorkEnd)
+
+            // Stop-after-set: when cycling is on and the user opted to stop at
+            // each set boundary (every Nth session — the same cadence that earns
+            // the long break), end here without taking the final break. Clean up
+            // as a normal stop, then leave a terminal marker so the menu bar app
+            // posts the "start another set" notification. Re-read each iteration
+            // so flipping the setting mid-run takes effect at the next boundary.
+            if Defaults.autoStartNextSession, Defaults.stopAfterSet,
+               let prev = session.current,
+               session.hasLongBreak(sessionNumber: prev.sessionNumber,
+                                     every: Defaults.sessionsBeforeLongBreak) {
+                clearEverything(unblock: block)
+                try? session.save(session.completedSet(from: prev))
+                return
+            }
+
             sleepUntil(currentBreakEnd)
 
             if !Defaults.autoStartNextSession { break }

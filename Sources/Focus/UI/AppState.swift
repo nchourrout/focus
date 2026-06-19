@@ -52,8 +52,32 @@ final class AppState: ObservableObject {
     }
 
     private func apply(blockActive newBlock: Bool, state: PomodoroSession.Active?, musicPlaying newMusic: Bool) {
+        // Capture before the defer flips it, so every exit path shares one rule:
+        // the first apply suppresses notifications (see the marker branch and the
+        // transition emitter below).
+        let wasApplied = hasAppliedOnce
+        defer { hasAppliedOnce = true }
+
         if newBlock != blockActive { blockActive = newBlock }
         if newMusic != musicPlaying { musicPlaying = newMusic }
+
+        // Set-complete marker: the daemon ended a "stop after each set" run (it
+        // already unblocked and stopped music). Post the actionable "start
+        // another set" notification, then clear the file so we settle to idle.
+        // Skip the notification for a marker first seen at launch (the set ended
+        // while the app was closed) — but still clear it. Clearing here is the
+        // one place AppState writes the state file; safe because the daemon has
+        // exited, so there's no concurrent writer.
+        if let s = state, s.setComplete {
+            if wasApplied {
+                LocalNotifications.postSetComplete(goal: s.goal)
+                Sounds.play(.sessionEnd)
+            }
+            PomodoroSession.default.clear()
+            pomodoro = nil
+            phase = .done
+            return
+        }
 
         let prevPomodoro = pomodoro
         let prevPhase = phase
@@ -75,8 +99,7 @@ final class AppState: ObservableObject {
         }
         if newPhase != phase { phase = newPhase }
 
-        defer { hasAppliedOnce = true }
-        guard hasAppliedOnce else { return }
+        guard wasApplied else { return }
         emitTransitionNotification(
             from: (prevPomodoro, prevPhase),
             to: (pomodoro, phase)

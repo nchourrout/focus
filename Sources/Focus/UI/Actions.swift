@@ -26,10 +26,17 @@ enum Actions {
         if alert.runModal() == .alertFirstButtonReturn {
             let goal = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             if !goal.isEmpty {
-                let preset = Defaults.pomodoroMusic
-                startPomodoro(goal: goal, music: preset.isEmpty ? nil : preset)
+                startPomodoro(goal: goal)
             }
         }
+    }
+
+    /// Start with the user's default music preset (empty preset → no music).
+    /// Shared by the menu prompt and the set-complete notification action, which
+    /// both already have a goal in hand.
+    static func startPomodoro(goal: String) {
+        let preset = Defaults.pomodoroMusic
+        startPomodoro(goal: goal, music: preset.isEmpty ? nil : preset)
     }
 
     static func startPomodoro(goal: String, music: String?) {
