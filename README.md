@@ -10,7 +10,7 @@ A macOS menu bar app + CLI to get in the zone.
 
 - **Block distracting websites** by editing `/etc/hosts`
 - **Play focus music** from free, ad-free [SomaFM](https://somafm.com) streams (Drone Zone, Groove Salad, Mission Control, …) — or any HTTP(S) audio stream URL, or a local audio file
-- **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up automatically. By default it keeps cycling (work → break → work …) with a longer break after every 4 sessions, until you stop it. Or have it stop after each set of 4 and ask whether to start another (with the same goal or a new one)
+- **Run a pomodoro** as a detached daemon that blocks sites during work, plays music, and cleans up automatically. The block lifts during breaks so you can browse freely, then comes back when the next work phase starts. By default it keeps cycling (work → break → work …) with a longer break after every 4 sessions, until you stop it. Or have it stop after each set of 4 and ask whether to start another (with the same goal or a new one)
 - **Global hotkeys** for start/stop pomodoro and toggle block, configurable in Settings
 - **Launch at login** toggle via `SMAppService`
 - One Swift binary is both the menu bar app (run with no args) and the CLI (run with a subcommand)

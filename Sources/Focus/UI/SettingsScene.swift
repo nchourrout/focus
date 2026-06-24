@@ -166,7 +166,17 @@ private struct GeneralTab: View {
         defaultsBinding(get: { Defaults.sessionsBeforeLongBreak }, set: { Defaults.sessionsBeforeLongBreak = $0 })
     }
     private var pomodoroMusicBinding: Binding<String> {
-        defaultsBinding(get: { Defaults.pomodoroMusic }, set: { Defaults.pomodoroMusic = $0 })
+        Binding(
+            get: { _ = refreshTick; return Defaults.pomodoroMusic },
+            set: { newValue in
+                guard newValue != Defaults.pomodoroMusic else { return }
+                Defaults.pomodoroMusic = newValue
+                refreshTick += 1
+                // If music is already playing, switch it live so the change is
+                // audible immediately rather than only at the next start.
+                Actions.reapplyMusic(newValue)
+            }
+        )
     }
 
     private var phaseSoundsBinding: Binding<Bool> {

@@ -127,6 +127,18 @@ enum Actions {
         LocalPlayback.stop()
     }
 
+    /// Apply a music-preset change while audio is already playing: switch the
+    /// stream to the new preset, or stop if the user picked "None". No-op when
+    /// nothing is playing — the new preset takes effect at the next pomodoro start.
+    static func reapplyMusic(_ preset: String) {
+        guard LocalPlayback.isPlaying else { return }
+        if preset.isEmpty {
+            stopMusic()
+        } else {
+            playMusic(preset)
+        }
+    }
+
     // MARK: Private
 
     /// Fire-and-forget invocation of the focus binary. Launch errors are routed to

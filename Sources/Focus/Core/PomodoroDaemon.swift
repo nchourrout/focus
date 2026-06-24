@@ -64,12 +64,14 @@ enum PomodoroDaemon {
     /// - We do NOT install a SIGTERM handler. Default behavior is to terminate, which
     ///   means cleanup on interruption is the responsibility of `pomodoro stop`'s fallback
     ///   path. Normal completion cleans up explicitly at the end of this function.
+    /// - The block covers work phases only: it's lifted at the start of each
+    ///   break so the user can browse freely while resting, then re-applied when
+    ///   the next work phase begins.
     /// - When `Defaults.autoStartNextSession` is on, the daemon loops: after the
     ///   break it asks PomodoroSession for the next iteration, rewrites the state
-    ///   file, and starts a fresh work phase with the same goal. Block + music
-    ///   carry over so we don't re-spawn sudo or restart playback. The setting is
-    ///   re-read each iteration, so flipping it off mid-session takes effect at
-    ///   the next break.
+    ///   file, and starts a fresh work phase with the same goal. Music carries
+    ///   over so we don't restart playback. The setting is re-read each iteration,
+    ///   so flipping it off mid-session takes effect at the next break.
     static func runDaemon(
         goal: String, workEnd: Double, breakEnd: Double,
         workMinutes: Int, breakMinutes: Int,
@@ -78,21 +80,7 @@ enum PomodoroDaemon {
         signal(SIGHUP, SIG_IGN)
         _ = Darwin.setsid()
 
-        if block {
-            let blocked = Shell.run(Shell.Command(
-                Paths.selfExecutable,
-                ["block"] + Defaults.dohSuppressionFlags,
-                sudo: true
-            )).status == 0
-            // The UI can't surface a daemon-side sudo failure, so warn here. This
-            // is the daemon's only console side effect (everything else flows
-            // through the state file, which AppState reads).
-            if !blocked {
-                FileHandle.standardError.write(Data(
-                    "focus: warning — sudo -n block failed. Is /etc/sudoers.d/focus installed?\n".utf8
-                ))
-            }
-        }
+        if block { applyBlock() }
 
         if let music = music, !music.isEmpty {
             Shell.run(Shell.Command(Paths.selfExecutable, ["music", music]))
@@ -120,6 +108,10 @@ enum PomodoroDaemon {
                 return
             }
 
+            // Entering the break: lift the block so the user can browse freely
+            // while resting. Re-applied when the next work phase begins.
+            if block { removeBlock() }
+
             sleepUntil(currentBreakEnd)
 
             if !Defaults.autoStartNextSession { break }
@@ -145,11 +137,18 @@ enum PomodoroDaemon {
                 try? session.save(next)
                 currentWorkEnd = next.workEnd
                 currentBreakEnd = next.breakEnd
+                // Next work phase is starting now — restore the block.
+                if block { applyBlock() }
             } else {
                 break
             }
         }
 
+        // The block was already lifted at the last break boundary, so this unblock
+        // is normally redundant. Keep it anyway as a safety net: if that
+        // break-time removeBlock() silently failed (transient sudo error), this
+        // is the last chance to clear the block before the session ends.
+        // removeBlock() is idempotent, so the redundant case is harmless.
         clearEverything(unblock: block)
     }
 
@@ -177,12 +176,33 @@ enum PomodoroDaemon {
     }
 
     private static func clearEverything(unblock: Bool) {
-        if unblock {
-            Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
-        }
+        if unblock { removeBlock() }
         // Music doesn't need root; call Core directly instead of forking the CLI.
         LocalPlayback.stop()
         PomodoroSession.default.clear()
+    }
+
+    /// Apply the site block (plus DoH suppression) via sudo, warning on failure.
+    /// The UI can't surface a daemon-side sudo failure, so warn here. This is the
+    /// daemon's only console side effect (everything else flows through the state
+    /// file, which AppState reads).
+    private static func applyBlock() {
+        let blocked = Shell.run(Shell.Command(
+            Paths.selfExecutable,
+            ["block"] + Defaults.dohSuppressionFlags,
+            sudo: true
+        )).status == 0
+        if !blocked {
+            FileHandle.standardError.write(Data(
+                "focus: warning — sudo -n block failed. Is /etc/sudoers.d/focus installed?\n".utf8
+            ))
+        }
+    }
+
+    /// Lift the site block via sudo. Idempotent — unblocking when nothing is
+    /// blocked is a harmless no-op.
+    private static func removeBlock() {
+        Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
     }
 
     private static func sleepUntil(_ deadline: TimeInterval) {
