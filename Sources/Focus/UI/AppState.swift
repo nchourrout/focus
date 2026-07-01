@@ -10,6 +10,9 @@ final class AppState: ObservableObject {
     @Published private(set) var phase: PomodoroSession.Phase = .done
     @Published private(set) var blockActive: Bool = false
     @Published private(set) var musicPlaying: Bool = false
+    /// Display label of the current stream (preset name, URL, or filename).
+    /// Nil while stopped, or when an older build wrote a label-less PID file.
+    @Published private(set) var musicNowPlaying: String?
     // No @Published timeLeft: per-second updates would also re-render the menu
     // dropdown via @ObservedObject, which resets AppKit's hover selection.
     // Views that need a live countdown drive their own ticker (TimelineView).
@@ -46,12 +49,19 @@ final class AppState: ObservableObject {
         let snapshot = await Task.detached {
             (block: SiteBlock.default.isActive,
              state: PomodoroSession.default.current,
-             music: LocalPlayback.isPlaying)
+             music: LocalPlayback.isPlaying,
+             nowPlaying: LocalPlayback.nowPlaying)
         }.value
-        apply(blockActive: snapshot.block, state: snapshot.state, musicPlaying: snapshot.music)
+        apply(
+            blockActive: snapshot.block, state: snapshot.state,
+            musicPlaying: snapshot.music, musicNowPlaying: snapshot.nowPlaying
+        )
     }
 
-    private func apply(blockActive newBlock: Bool, state: PomodoroSession.Active?, musicPlaying newMusic: Bool) {
+    private func apply(
+        blockActive newBlock: Bool, state: PomodoroSession.Active?,
+        musicPlaying newMusic: Bool, musicNowPlaying newNowPlaying: String?
+    ) {
         // Capture before the defer flips it, so every exit path shares one rule:
         // the first apply suppresses notifications (see the marker branch and the
         // transition emitter below).
@@ -60,6 +70,7 @@ final class AppState: ObservableObject {
 
         if newBlock != blockActive { blockActive = newBlock }
         if newMusic != musicPlaying { musicPlaying = newMusic }
+        if newNowPlaying != musicNowPlaying { musicNowPlaying = newNowPlaying }
 
         // Set-complete marker: the daemon ended a "stop after each set" run (it
         // already unblocked and stopped music). Post the actionable "start

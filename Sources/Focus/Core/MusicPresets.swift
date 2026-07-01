@@ -16,6 +16,12 @@ enum MusicPresets {
         list.first { $0.name == name }?.uri
     }
 
+    /// Reverse lookup, used to recover the preset name when only the stream URL
+    /// survived (the daemon and CLI pass resolved URIs around, not preset names).
+    static func name(forURI uri: String) -> String? {
+        list.first { $0.uri == uri }?.name
+    }
+
     static var names: [String] { list.map { $0.name } }
 
     /// Precedence: explicit URI > target (preset name or http(s):// stream) > FOCUS_MUSIC_URI env.
