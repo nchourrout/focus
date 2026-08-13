@@ -63,6 +63,16 @@ enum PomodoroDaemon {
         signal(SIGHUP, SIG_IGN)
         _ = Darwin.setsid()
 
+        // First line of the run: from here on the log is the only way to see what
+        // this process did, since its stdio is /dev/null.
+        Log.daemon.notice(
+            """
+            starting \(plan.workMinutes, privacy: .public)/\(plan.breakMinutes, privacy: .public) \
+            block=\(plan.block, privacy: .public) \
+            music=\(plan.station?.label ?? "none", privacy: .public)
+            """
+        )
+
         SessionRunner(
             plan: plan,
             session: .default,

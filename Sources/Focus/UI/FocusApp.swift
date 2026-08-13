@@ -1,6 +1,5 @@
 import SwiftUI
 import UserNotifications
-import os
 
 struct FocusApp: App {
     @StateObject private var state = AppState()
@@ -96,14 +95,12 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         }
         if SiteBlock.default.isActive {
             guard SudoersInstaller.isInstalled else {
-                Logger(subsystem: "com.nchourrout.focus", category: "terminate")
-                    .warning("block still active on quit; sudoers drop-in missing, leaving /etc/hosts as-is")
+                Log.terminate.warning("block still active on quit; sudoers drop-in missing, leaving /etc/hosts as-is")
                 return
             }
             let result = Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
             if result.status != 0 {
-                Logger(subsystem: "com.nchourrout.focus", category: "terminate")
-                    .error("unblock-on-quit failed (status \(result.status, privacy: .public))")
+                Log.terminate.error("unblock-on-quit failed (status \(result.status, privacy: .public))")
             }
         }
     }

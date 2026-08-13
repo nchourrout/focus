@@ -42,6 +42,21 @@ struct SessionRunner {
         session.clear()
     }
 
+    /// Write state, and say so when it doesn't take. A failed save leaves the
+    /// menu bar showing a session that has already moved on, which is confusing
+    /// in a way that is impossible to diagnose from the outside. The run carries
+    /// on either way: its own deadlines are in memory.
+    private static func save(_ active: PomodoroSession.Active,
+                             to session: PomodoroSession, what: String) {
+        do {
+            try session.save(active)
+        } catch {
+            Log.daemon.error(
+                "failed to write \(what, privacy: .public) to \(session.stateURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
     /// Run until the session ends. Blocks the calling thread for the duration,
     /// which is why the daemon is a detached process.
     ///
@@ -73,7 +88,8 @@ struct SessionRunner {
                session.hasLongBreak(sessionNumber: prev.sessionNumber,
                                     every: atWorkEnd.sessionsBeforeLongBreak) {
                 Self.endSession(unblock: plan.block, clearing: session, effects: effects)
-                try? session.save(session.completedSet(from: prev, at: effects.now))
+                Self.save(session.completedSet(from: prev, at: effects.now),
+                          to: session, what: "set-complete marker")
                 return
             }
 
@@ -100,7 +116,7 @@ struct SessionRunner {
                 sessionsBeforeLongBreak: atBreakEnd.sessionsBeforeLongBreak,
                 at: effects.now
             )
-            try? session.save(next)
+            Self.save(next, to: session, what: "session \(next.sessionNumber)")
             currentWorkEnd = next.workEnd
             currentBreakEnd = next.breakEnd
             // Next work phase is starting now — restore the block.
@@ -129,30 +145,57 @@ struct LiveSessionEffects: SessionEffects {
         }
     }
 
-    /// Apply the site block (plus DoH suppression) via sudo, warning on failure.
-    /// The UI can't surface a daemon-side sudo failure, so warn here.
+    /// Apply the site block (plus DoH suppression) via sudo.
+    ///
+    /// A failure here is the quietest thing Focus can do wrong: the session runs
+    /// normally, the state file says `block: true`, and the sites stay reachable.
+    /// The UI can't surface it — the daemon has no NSApplication — so the log is
+    /// the only trace. It captures stderr too, since `sudo` explains itself there
+    /// ("a password is required" reads very differently from a missing binary).
     func applyBlock() {
-        let blocked = Shell.run(Shell.Command(
+        let result = Shell.run(Shell.Command(
             Paths.selfExecutable,
             ["block"] + Defaults.dohSuppressionFlags,
-            sudo: true
-        )).status == 0
-        if !blocked {
-            FileHandle.standardError.write(Data(
-                "focus: warning — sudo -n block failed. Is /etc/sudoers.d/focus installed?\n".utf8
-            ))
-        }
+            sudo: true,
+            captureStderr: true
+        ))
+        guard result.status != 0 else { return }
+        Log.daemon.error(
+            """
+            sudo -n block failed (status \(result.status, privacy: .public)); \
+            sites are NOT blocked. Is /etc/sudoers.d/focus installed and does it \
+            list \(Paths.selfExecutable.path, privacy: .public)? \
+            stderr: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines), privacy: .public)
+            """
+        )
     }
 
     /// Lift the site block via sudo. Idempotent — unblocking when nothing is
     /// blocked is a harmless no-op.
     func removeBlock() {
-        Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
+        let result = Shell.run(Shell.Command(
+            Paths.selfExecutable, ["unblock"], sudo: true, captureStderr: true
+        ))
+        guard result.status != 0 else { return }
+        Log.daemon.error(
+            """
+            sudo -n unblock failed (status \(result.status, privacy: .public)); \
+            sites may stay blocked after the session ends. \
+            stderr: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines), privacy: .public)
+            """
+        )
     }
 
     /// Playback needs no root, so call Core directly instead of forking the CLI.
     func startMusic(_ station: Station) {
-        try? LocalPlayback.play(station)
+        do {
+            try LocalPlayback.play(station)
+        } catch {
+            // Music is the least of what a session does — log and work on.
+            Log.daemon.error(
+                "failed to start \(station.label, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     func stopMusic() {

@@ -9,138 +9,113 @@
 A macOS menu bar app + CLI to get in the zone.
 
 - **Block distracting websites** by editing `/etc/hosts`
-- **Play focus music** from free, ad-free [SomaFM](https://somafm.com) streams (Drone Zone, Groove Salad, Mission Control, …) — or any HTTP(S) audio stream URL, or a local audio file
-- **Run a pomodoro** as a detached daemon that blocks sites during work, plays music, and cleans up automatically. The block lifts during breaks so you can browse freely, then comes back when the next work phase starts. By default it keeps cycling (work → break → work …) with a longer break after every 4 sessions, until you stop it. Or have it stop after each set of 4 and ask whether to start another (with the same goal or a new one)
-- **Global hotkeys** for start/stop pomodoro and toggle block, configurable in Settings
-- **Launch at login** toggle via `SMAppService`
-- One Swift binary is both the menu bar app (run with no args) and the CLI (run with a subcommand)
+- **Play focus music** from free, ad-free [SomaFM](https://somafm.com) streams, any HTTP(S) stream URL, or a local file
+- **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up after itself. The block lifts during breaks and returns for the next work phase. It keeps cycling until you stop it, with a longer break every 4 sessions — or stops after each set and asks whether to start another
+- **Global hotkeys** and a **launch at login** toggle, both configured in Settings
+- One Swift binary is both the menu bar app (no args) and the CLI (a subcommand)
 
 ## Download
 
-Pre-built `.app` zips are attached to each [GitHub Release](https://github.com/nchourrout/focus/releases). Grab the latest, unzip, drag `Focus.app` to `/Applications`, then run:
+Pre-built `.app` zips are attached to each [GitHub Release](https://github.com/nchourrout/focus/releases). Unzip, drag `Focus.app` to `/Applications`, then:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Focus.app
 open /Applications/Focus.app
 ```
 
-The app is unsigned and unnotarized, so Gatekeeper blocks the first launch until that `xattr` runs (or right-click → Open → Open). The CLI symlink is not created by the zip download. If you want `focus` on `$PATH`, build from source (next section).
+The app is unsigned, so Gatekeeper blocks the first launch until that `xattr` runs (or right-click → Open). The zip doesn't create the CLI symlink — build from source if you want `focus` on `$PATH`.
 
 ## Build & install
 
-Requires macOS 13+ and Swift 5.10+. Xcode Command Line Tools are enough to build; `swift test` needs a full Xcode.
-
-> KeyboardShortcuts is pinned to 1.15.0 to keep that true. 1.16.0+ use the `#Preview` macro and 3.x also uses SwiftUI's `@Entry`; both need macro plugins that only ship with the full Xcode.
+Requires macOS 13+ and Swift 5.10+. Command Line Tools are enough to build; `swift test` needs a full Xcode.
 
 ```bash
 git clone git@github.com:nchourrout/focus.git ~/dev/focus
 cd ~/dev/focus
 ./Scripts/install.sh            # builds Focus.app, installs to /Applications,
                                 # symlinks /usr/local/bin/focus → the inner binary
-open /Applications/Focus.app    # launches the menu bar app
+open /Applications/Focus.app
 ```
 
-The first time you toggle the block, Focus pops a native admin password dialog and installs `/etc/sudoers.d/focus`. After that, all toggles and pomodoro auto-blocks run silently. You can also manage the permission from **Settings → General → Grant permission…** at any time.
+The first time you toggle the block, Focus pops a native admin password dialog and installs `/etc/sudoers.d/focus`; after that everything runs silently. `install.sh` strips the quarantine flag — if you ever see "Focus can't be opened because Apple cannot check it," run `sudo xattr -dr com.apple.quarantine /Applications/Focus.app`.
 
-Open **Settings…** from the menu (⌘,) to bind global hotkeys and toggle launch-at-login.
-
-The `.app` is unsigned; `install.sh` strips the quarantine flag so Gatekeeper doesn't block first-open. If you ever see "Focus can't be opened because Apple cannot check it," run `sudo xattr -dr com.apple.quarantine /Applications/Focus.app`.
+> KeyboardShortcuts is pinned to 1.15.0 so Command Line Tools stay sufficient. 1.16.0+ use the `#Preview` macro and 3.x also uses SwiftUI's `@Entry`; both need macro plugins that ship only with the full Xcode.
 
 ## Menu bar
 
-Click the icon for a dropdown:
-
-- **stopwatch icon** during work, **coffee cup** during the break, with a live `mm:ss` countdown next to it. Idle shows a dashed circle (or a slashed circle when the block is on)
-- **Start pomodoro…** — prompts for a goal; replaced by **Stop pomodoro** while running
-- **Block / Unblock websites** — toggles `/etc/hosts` (uses the sudoers drop-in)
-- **Music** submenu — any preset, or Stop. The current station is named in the submenu title and check-marked in the list
-- **Settings…** — tabbed window: General (work/break/long-break durations, session-cycling, stop-after-set, launch at login, sounds, music preset), Shortcuts (global hotkey recorders), Block list (the sites edited inline)
+- **stopwatch** during work, **coffee cup** during the break, with a live `mm:ss` countdown. Idle shows a dashed circle, or a slashed one when the block is on
+- **Start pomodoro…** — prompts for a goal; becomes **Stop pomodoro** while running
+- **Block / Unblock websites**
+- **Music** — any preset, or Stop. The current station is named in the title and check-marked in the list
+- **Settings…** (⌘,) — General, Shortcuts, and an inline editor for the Block list
 - **Quit Focus**
 
-Menu actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.json` stays the single source of truth. The menu bar polls it once a second. It passes no flags when starting a pomodoro: the CLI reads the same Settings it would, so there's only one place the rules live.
+Menu actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.json` stays the single source of truth; the menu bar polls it once a second. Starting a pomodoro passes no flags — the CLI reads the same Settings the menu would, so the rules live in one place.
 
 ## CLI
 
 ```bash
-focus --version                  # print the app version
-
-focus status                     # human-readable block status
-focus status --json              # {"active": true|false}
-
-sudo focus block                 # block sites from the bundled block.txt
-sudo focus unblock               # remove the block
-sudo focus toggle --json         # toggle; emits the new state
+focus status                     # block status; --json for {"active": true|false}
+sudo focus block                 # block sites from block.txt
+sudo focus unblock
+sudo focus toggle --json
 
 focus music --list               # built-in SomaFM streams
-focus music groovesalad          # stream a preset
-focus music https://stream.url   # any HTTP(S) audio stream
+focus music groovesalad          # a preset, or any http(s) stream URL
 focus music --file ~/brown.mp3 --loop
 focus music --stop
 
 focus pomodoro start "write spec"                 # uses your Settings, cycles until stopped
 focus pomodoro start "deep work" --work 50 --break 10 --music groovesalad
-focus pomodoro start "quiet hour" --no-block      # skip the site block for one run
-focus pomodoro status                             # add --json for machine-readable
+focus pomodoro start "quiet hour" --no-block
+focus pomodoro status                             # add --json
 focus pomodoro stop
-
-# Every flag is an override. Omit one and the session uses your Settings value
-# (25min work / 5min break out of the box), so the CLI and the menu bar start
-# identical sessions.
-#
-# Session cycling and the long break (every 4th break, 15min by default) are
-# configured in Settings → General. Turn cycling off there for one-and-done runs,
-# or enable "Stop after each set" to pause at every 4th session. A notification
-# then lets you start another set with the same goal, or type a new goal inline.
-# Those settings are re-read at each phase boundary, so changing one mid-run
-# takes effect at the next work/break transition rather than the next run.
 ```
 
-**Music sources**:
-- **HTTP(S) streams** — built-in SomaFM presets, or any direct stream URL. Played via `AVPlayer` in a detached subprocess.
-- **Local audio files** — `--file PATH`, with optional `--loop`. Played via `afplay`.
+Every pomodoro flag is an override: omit one and the session uses your Settings value (25/5 out of the box), so the CLI and the menu bar start identical sessions. Cycling, long-break length and cadence, and stop-after-set live in **Settings → General**, and are re-read at each phase boundary — change one mid-run and it takes effect at the next transition, not the next run.
 
-A pomodoro picks its music in this order: the `--music` flag, then the **Start music with pomodoro** preset in Settings, then `FOCUS_MUSIC_URI` (which also applies when the preset is **None**). Set `FOCUS_MUSIC_URI` in your shell to give `focus music` with no args a default too. A `--music` value that names no preset is an error; an unusable `FOCUS_MUSIC_URI` (a local file, say) just means the pomodoro starts without music.
+Music sources are HTTP(S) streams (via `AVPlayer`) or local files (via `afplay`), both in detached subprocesses. A pomodoro picks its music in this order: `--music`, then the **Start music with pomodoro** preset, then `FOCUS_MUSIC_URI` (which also applies when the preset is **None**). A `--music` value naming no preset is an error; an unusable `FOCUS_MUSIC_URI` just means the session starts without music.
 
 ## Sudoers (system permission)
 
-`block`, `unblock`, and `toggle` need root because they write `/etc/hosts`. The pomodoro daemon runs them non-interactively via `sudo -n`, so a `NOPASSWD` entry is required in `/etc/sudoers.d/focus`.
+`block`, `unblock`, and `toggle` write `/etc/hosts`, and the daemon runs them via `sudo -n`, so a `NOPASSWD` entry in `/etc/sudoers.d/focus` is required. Focus installs it itself: the first Block toggle prompts with the native admin dialog and writes the rule after `visudo -cf` validation. Re-run it any time from **Settings → General → Grant permission…**, for instance if the binary path changes.
 
-Focus installs it itself — no separate shell script:
-
-- On the first Hyper+B / Block toggle, the app detects the missing drop-in and prompts with the **native macOS admin password dialog** (same UX as Xcode, Homebrew-cask, etc.). Enter your password once; the rule is written after `visudo -cf` validation.
-- You can re-run the install from **Settings → General → Grant permission…** at any time (e.g. if the binary path changes).
-
-The generated rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binary path, including the documented flag combinations (`--no-block-doh`, `--json`). No wildcards. See [`SudoersInstaller.renderRule`](Sources/Focus/Core/SudoersInstaller.swift) for the exact lines.
+The rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binary path with their documented flag combinations, no wildcards. See [`SudoersInstaller.renderRule`](Sources/Focus/Core/SudoersInstaller.swift).
 
 ## State files
 
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
 - `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete)
-- `~/.focus-music.pid` — playback PID and the station label (`pid\nlabel`), so `--stop` can reach it and the menu bar can name what's playing
+- `~/.focus-music.pid` — playback PID and station label (`pid\nlabel`), so `--stop` can reach it and the menu bar can name what's playing
+
+## Logs
+
+The daemon and the music subprocesses are detached with their stdio on `/dev/null`, so anything they print is lost. Diagnostics go to Unified Logging instead — Console.app filtered on the subsystem, or:
+
+```bash
+log stream --predicate 'subsystem == "com.nchourrout.focus"'
+log show --last 30m --predicate 'subsystem == "com.nchourrout.focus"'
+```
+
+Categories: `daemon`, `playback`, `actions`, `launch-at-login`, `terminate`.
+
+Worth knowing: a failing `sudo -n block` is the quietest thing Focus can do wrong — the session runs normally and the state file says `block: true`, but the sites stay reachable. It's logged under `daemon` with sudo's own stderr attached, which is the fastest way to tell a missing drop-in from a rule that doesn't list the binary path you're running.
 
 ## Testing
 
-Unit tests under `Tests/FocusTests/` use Swift Testing (`#expect`, `@Test`). CI runs them on every push via GitHub Actions — see the badge at the top.
-
-Locally with a full Xcode install:
-
-```bash
-swift test
-```
-
-Without Xcode, `swift build` still works; only `swift test` needs the full toolchain.
+Tests under `Tests/FocusTests/` use Swift Testing (`#expect`, `@Test`), and CI runs them on every push. Locally, `swift test` needs a full Xcode; `swift build` works without one.
 
 ## Releasing
 
-Single source of truth for `CFBundleShortVersionString` is the `VERSION` file at the repo root.
+`VERSION` at the repo root is the single source of truth for `CFBundleShortVersionString`.
 
 ```bash
-./Scripts/release.sh 0.6.0      # bumps VERSION, commits "Release v0.6.0", tags v0.6.0
+./Scripts/release.sh 0.6.0      # bumps VERSION, commits, tags v0.6.0
 git push && git push origin v0.6.0
 ```
 
-The tag push triggers `.github/workflows/release.yml`, which builds `Focus.app` on a clean macos-15 runner, zips it with `ditto`, and attaches `Focus-v0.6.0.zip` to a new GitHub Release.
+The tag push triggers `release.yml`, which builds `Focus.app` on a clean macos-15 runner and attaches the zip to a new GitHub Release.
 
 ## License
 
