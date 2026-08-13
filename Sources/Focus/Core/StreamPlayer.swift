@@ -6,6 +6,9 @@ import Darwin
 /// but for network streams instead of local files. Runs in a detached subprocess
 /// (`_stream-play`) so the menu bar app and CLI use the same kill-by-PID stop path
 /// as afplay.
+///
+/// Diagnostics go to `Log.playback`, not stderr: this process is always spawned
+/// with its stdio on /dev/null, so stderr has no reader.
 enum StreamPlayer {
     /// Body of the hidden `_stream-play` subcommand. Streams forever until SIGTERM
     /// or until AVPlayer reports a fatal item failure (bad URL, network error).
@@ -17,7 +20,7 @@ enum StreamPlayer {
         // validate, but through the same door everything else uses rather than
         // hand-rolling a second scheme check.
         guard let streamURL = Station(uri: url)?.streamURL else {
-            FileHandle.standardError.write(Data("focus: refusing to stream non-http(s) URL\n".utf8))
+            Log.playback.error("refusing to stream non-http(s) URL: \(url, privacy: .public)")
             exit(1)
         }
 
@@ -33,14 +36,15 @@ enum StreamPlayer {
         let stalled = AVPlayerItem.playbackStalledNotification
         _ = center.addObserver(forName: failed, object: item, queue: .main) { note in
             let err = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription ?? "unknown"
-            FileHandle.standardError.write(Data("focus: stream failed: \(err)\n".utf8))
+            Log.playback.error("stream failed, exiting: \(err, privacy: .public)")
             exit(1)
         }
         _ = center.addObserver(forName: stalled, object: item, queue: .main) { _ in
             // Stalls happen — don't exit, just note. A retry strategy could go here.
-            FileHandle.standardError.write(Data("focus: stream stalled\n".utf8))
+            Log.playback.notice("stream stalled")
         }
 
+        Log.playback.notice("streaming \(streamURL.absoluteString, privacy: .public)")
         player.play()
         // Block on the run loop; SIGTERM terminates the process and AVPlayer with it.
         RunLoop.current.run()

@@ -79,8 +79,14 @@ enum LocalPlayback {
         _ = Darwin.setsid()
         // Default SIGTERM terminates the process; afplay child receives it too via the group.
         while true {
-            let result = Shell.run(Shell.Command(path: "/usr/bin/afplay", [file]))
-            if result.status != 0 { return }
+            let result = Shell.run(Shell.Command(path: "/usr/bin/afplay", [file], captureStderr: true))
+            guard result.status != 0 else { continue }
+            // Missing file, bad format, or SIGTERM. Detached process, so the log
+            // is the only place this can be seen.
+            Log.playback.notice(
+                "afplay loop ended (status \(result.status, privacy: .public)): \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines), privacy: .public)"
+            )
+            return
         }
     }
 

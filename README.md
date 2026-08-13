@@ -119,6 +119,19 @@ The generated rule whitelists `block`, `unblock`, and `toggle` against the Focus
 - `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete)
 - `~/.focus-music.pid` — playback PID and the station label (`pid\nlabel`), so `--stop` can reach it and the menu bar can name what's playing
 
+## Logs
+
+The pomodoro daemon and the music subprocesses are detached, with their stdio on `/dev/null` — they outlive the shell that started them, so anything they print is lost. Their diagnostics go to Unified Logging instead:
+
+```bash
+log stream --predicate 'subsystem == "com.nchourrout.focus"'      # live
+log show --last 30m --predicate 'subsystem == "com.nchourrout.focus"'
+```
+
+Or Console.app, filtered on the subsystem. Categories are `daemon` (the run loop and its block calls), `playback`, `actions`, `launch-at-login`, and `terminate`.
+
+Worth knowing: a failing `sudo -n block` is the quietest thing Focus can do wrong. The session runs normally and the state file says `block: true`, but the sites stay reachable. That failure is logged under `daemon` with sudo's own stderr attached, which is the fastest way to tell a missing `/etc/sudoers.d/focus` from a rule that doesn't list the binary path you're running.
+
 ## Testing
 
 Unit tests under `Tests/FocusTests/` use Swift Testing (`#expect`, `@Test`). CI runs them on every push via GitHub Actions — see the badge at the top.

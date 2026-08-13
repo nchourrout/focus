@@ -1,9 +1,5 @@
 import Foundation
 import AppKit
-import os
-
-private let log = Logger(subsystem: "com.nchourrout.focus", category: "actions")
-
 /// Thin dispatch layer: every menu action spawns the focus CLI (same binary,
 /// different argv) and returns immediately. All state changes flow back
 /// through the state file, which AppState picks up on its next tick.
@@ -82,7 +78,7 @@ enum Actions {
                 }
             }
         } catch {
-            log.error("toggle failed to launch: \(error.localizedDescription, privacy: .public)")
+            Log.actions.error("toggle failed to launch: \(error.localizedDescription, privacy: .public)")
             showSudoersMissingAlert()
         }
     }
@@ -103,7 +99,7 @@ enum Actions {
         do {
             try LocalPlayback.play(station)
         } catch {
-            log.error("playMusic \(station.label, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            Log.actions.error("playMusic \(station.label, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -132,7 +128,7 @@ enum Actions {
         do {
             try Shell.spawn(Shell.Command(Paths.selfExecutable, args))
         } catch {
-            log.error("spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            Log.actions.error("spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -148,7 +144,7 @@ enum Actions {
                 Task { @MainActor in showSudoersMissingAlert() }
             }
         } catch {
-            log.error("sudo spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            Log.actions.error("sudo spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             showSudoersMissingAlert()
         }
     }
