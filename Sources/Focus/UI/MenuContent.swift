@@ -27,13 +27,13 @@ struct MenuContent: View {
             // needed when the stream isn't a preset (custom URL, local file,
             // or a label-less PID file from an older build).
             if state.musicPlaying, currentPresetName == nil {
-                Text(nowPlayingDisplay.map { "Now playing: \($0)" } ?? "Now playing")
+                Text(state.musicNowPlaying.map { "Now playing: \($0.displayName)" } ?? "Now playing")
                 Divider()
             }
             ForEach(MusicPresets.list, id: \.name) { preset in
                 Toggle(preset.name.capitalized, isOn: Binding(
                     get: { currentPresetName == preset.name },
-                    set: { _ in Actions.playMusic(preset.name) }
+                    set: { _ in Actions.playMusic(.preset(preset.name)) }
                 ))
             }
             Divider()
@@ -57,26 +57,15 @@ struct MenuContent: View {
     }
 
     /// The playing station's preset name, or nil when stopped / playing a
-    /// non-preset stream. Drives both the submenu checkmark and the title.
+    /// non-preset stream. Drives the submenu checkmark.
     private var currentPresetName: String? {
-        guard let label = state.musicNowPlaying,
-              MusicPresets.names.contains(label) else { return nil }
-        return label
-    }
-
-    /// Short human label for the current stream: preset name capitalized,
-    /// custom URL reduced to its host, local file shown by name.
-    private var nowPlayingDisplay: String? {
-        guard let label = state.musicNowPlaying else { return nil }
-        if MusicPresets.names.contains(label) { return label.capitalized }
-        if label.contains("://") { return URL(string: label)?.host ?? label }
-        return label
+        state.musicNowPlaying?.presetName
     }
 
     private var musicTitle: String {
         guard state.musicPlaying else { return "Music" }
-        guard let display = nowPlayingDisplay else { return "Music ♪" }
-        return "Music ♪ \(display)"
+        guard let station = state.musicNowPlaying else { return "Music ♪" }
+        return "Music ♪ \(station.displayName)"
     }
 
     @ViewBuilder

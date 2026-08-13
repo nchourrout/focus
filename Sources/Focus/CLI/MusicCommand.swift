@@ -43,19 +43,16 @@ struct Music: ParsableCommand {
 
         if let filePath = file {
             let url = try resolveExistingFile(filePath)
-            try LocalPlayback.start(path: url, loop: loop)
+            try LocalPlayback.play(.file(url), loop: loop)
             print("focus: playing \(url.path)" + (loop ? " (looped)" : ""))
             return
         }
 
-        guard let resolved = try MusicPresets.resolve(target: target, explicitURI: uri) else {
+        guard let station = try Station.resolve(target: target, explicitURI: uri) else {
             throw CLIError.missingMusicSource
         }
-        guard resolved.hasPrefix("http://") || resolved.hasPrefix("https://") else {
-            throw ValidationError("expected an http(s):// stream URL, got: \(resolved)")
-        }
-        try LocalPlayback.startStream(url: resolved)
-        print("focus: streaming \(resolved)")
+        try LocalPlayback.play(station)
+        print("focus: streaming \(station.uri)")
     }
 }
 
