@@ -99,7 +99,7 @@ focus pomodoro stop
 - **HTTP(S) streams** — built-in SomaFM presets, or any direct stream URL. Played via `AVPlayer` in a detached subprocess.
 - **Local audio files** — `--file PATH`, with optional `--loop`. Played via `afplay`.
 
-A pomodoro picks its music in this order: the `--music` flag, then the **Start music with pomodoro** preset in Settings, then `FOCUS_MUSIC_URI`. Set `FOCUS_MUSIC_URI` in your shell to give `focus music` with no args a default too.
+A pomodoro picks its music in this order: the `--music` flag, then the **Start music with pomodoro** preset in Settings, then `FOCUS_MUSIC_URI` (which also applies when the preset is **None**). Set `FOCUS_MUSIC_URI` in your shell to give `focus music` with no args a default too. A `--music` value that names no preset is an error; an unusable `FOCUS_MUSIC_URI` (a local file, say) just means the pomodoro starts without music.
 
 ## Sudoers (system permission)
 

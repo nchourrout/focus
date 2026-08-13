@@ -112,7 +112,9 @@ private struct GeneralTab: View {
     /// have to simulate them in their head.
     private var cyclingSummary: String {
         guard autoStart else {
-            return "One work phase, one break, then Focus stops."
+            // Even a single run takes the long break when every break is long.
+            let breakLength = sessionsBeforeLongBreak == 1 ? longBreakMinutes : breakMinutes
+            return "One \(workMinutes) min work phase, one \(breakLength) min break, then Focus stops."
         }
         let every = sessionsBeforeLongBreak
         let sessions = "\(every) session\(every == 1 ? "" : "s")"

@@ -2,24 +2,27 @@ import Testing
 import Foundation
 @testable import Focus
 
-/// Settings live in one shared `UserDefaults` domain, so these run one at a time
-/// and put back whatever they found.
+/// `Defaults` and the environment are process-wide, so these run one at a time.
 @Suite(.serialized) struct PomodoroPlanTests {
 
+    private static let scratchSuite = "com.nchourrout.focus.tests"
+
+    /// Run `body` against a scratch preferences domain, wiped before and after.
+    /// Never touches `com.nchourrout.focus`, which is the running app's live
+    /// settings on a developer's own Mac.
     private func withSettings(
         work: Int, breakMinutes: Int, block: Bool, station: Station?,
         _ body: () throws -> Void
     ) rethrows {
-        let saved = (
-            work: Defaults.workMinutes, breakMinutes: Defaults.breakMinutes,
-            block: Defaults.blockDuringPomodoro, station: Defaults.pomodoroStation
-        )
+        let scratch = UserDefaults(suiteName: Self.scratchSuite)!
+        scratch.removePersistentDomain(forName: Self.scratchSuite)
+        let saved = Defaults.store
         defer {
-            Defaults.workMinutes = saved.work
-            Defaults.breakMinutes = saved.breakMinutes
-            Defaults.blockDuringPomodoro = saved.block
-            Defaults.pomodoroStation = saved.station
+            scratch.removePersistentDomain(forName: Self.scratchSuite)
+            Defaults.store = saved
         }
+        Defaults.store = scratch
+
         Defaults.workMinutes = work
         Defaults.breakMinutes = breakMinutes
         Defaults.blockDuringPomodoro = block
@@ -53,12 +56,54 @@ import Foundation
         }
     }
 
-    @Test func emptyMusicSettingMeansSilence() throws {
-        // With no preset set and no override, there's nothing to play unless the
-        // environment names a stream.
+    /// Run `body` with `FOCUS_MUSIC_URI` set to `value` (or unset for nil), then
+    /// put the environment back. Serialized suite, so nothing else observes it.
+    private func withMusicEnv(_ value: String?, _ body: () throws -> Void) rethrows {
+        let key = "FOCUS_MUSIC_URI"
+        let saved = ProcessInfo.processInfo.environment[key]
+        defer {
+            if let saved { setenv(key, saved, 1) } else { unsetenv(key) }
+        }
+        if let value { setenv(key, value, 1) } else { unsetenv(key) }
+        try body()
+    }
+
+    @Test func noSettingAndNoEnvironmentMeansSilence() throws {
         try withSettings(work: 25, breakMinutes: 5, block: true, station: nil) {
-            let plan = try PomodoroPlan.fromSettings(goal: "quiet")
-            #expect(plan.station == nil || ProcessInfo.processInfo.environment["FOCUS_MUSIC_URI"] != nil)
+            try withMusicEnv(nil) {
+                let plan = try PomodoroPlan.fromSettings(goal: "quiet")
+                #expect(plan.station == nil)
+            }
+        }
+    }
+
+    @Test func environmentIsTheLastResort() throws {
+        try withSettings(work: 25, breakMinutes: 5, block: true, station: nil) {
+            try withMusicEnv("https://radio.example/stream") {
+                let plan = try PomodoroPlan.fromSettings(goal: "x")
+                #expect(plan.station == .stream(URL(string: "https://radio.example/stream")!))
+            }
+        }
+        // ...and the setting beats it.
+        try withSettings(work: 25, breakMinutes: 5, block: true, station: .preset("cliqhop")) {
+            try withMusicEnv("https://radio.example/stream") {
+                let plan = try PomodoroPlan.fromSettings(goal: "x")
+                #expect(plan.station == .preset("cliqhop"))
+            }
+        }
+    }
+
+    @Test func unusableEnvironmentCostsMusicNotTheSession() throws {
+        // A local file path in FOCUS_MUSIC_URI is fine for `focus music --file`
+        // but unplayable for a pomodoro. Start anyway, just without music —
+        // failing here would strand the user with a Start button that does
+        // nothing, since the daemon's stderr goes to /dev/null.
+        try withSettings(work: 25, breakMinutes: 5, block: true, station: nil) {
+            try withMusicEnv("~/brown-noise.mp3") {
+                let plan = try PomodoroPlan.fromSettings(goal: "x")
+                #expect(plan.station == nil)
+                #expect(plan.workMinutes == 25)
+            }
         }
     }
 

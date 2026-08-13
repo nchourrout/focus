@@ -30,10 +30,16 @@ struct PomodoroPlan: Equatable {
     ) throws -> PomodoroPlan {
         // An override wins; otherwise fall through to the setting, and from
         // there to whatever `Station.resolve` finds in the environment.
+        //
+        // The override throws on a bad value — the user just typed it, so say so.
+        // An unusable FOCUS_MUSIC_URI only costs you music: it is ambient
+        // configuration, and refusing to start the pomodoro over it would strand
+        // anyone who exported a local file path there (`focus music --file`
+        // accepts one; a stream URL is the only thing a pomodoro can play).
         let station = if let music, !music.isEmpty {
             try Station.resolve(target: music)
         } else {
-            try Defaults.pomodoroStation ?? Station.resolve(target: nil)
+            Defaults.pomodoroStation ?? (try? Station.resolve(target: nil)) ?? nil
         }
         return PomodoroPlan(
             goal: goal,
