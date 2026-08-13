@@ -31,27 +31,11 @@ enum Actions {
         }
     }
 
-    /// Start with the user's default music preset (empty preset → no music).
-    /// Shared by the menu prompt and the set-complete notification action, which
-    /// both already have a goal in hand.
+    /// Start a session with the user's settings. No flags: the CLI reads the same
+    /// settings we would (see `PomodoroPlan`), so passing them here would just be
+    /// a second place for the rules to drift.
     static func startPomodoro(goal: String) {
-        let preset = Defaults.pomodoroMusic
-        startPomodoro(goal: goal, music: preset.isEmpty ? nil : preset)
-    }
-
-    static func startPomodoro(goal: String, music: String?) {
-        var args = [
-            "pomodoro", "start", goal,
-            "--work", String(Defaults.workMinutes),
-            "--break", String(Defaults.breakMinutes),
-        ]
-        if !Defaults.blockDuringPomodoro {
-            args.append("--no-block")
-        }
-        if let music = music, !music.isEmpty {
-            args.append(contentsOf: ["--music", music])
-        }
-        spawn(args)
+        spawn(["pomodoro", "start", goal])
     }
 
     static func stopPomodoro() {
@@ -115,11 +99,11 @@ enum Actions {
 
     /// Music actions don't need root, so we call Core directly instead of forking
     /// a CLI subprocess — saves a fork and lets us surface errors to the user.
-    static func playMusic(_ preset: String) {
+    static func playMusic(_ station: Station) {
         do {
-            try LocalPlayback.play(target: preset)
+            try LocalPlayback.play(station)
         } catch {
-            log.error("playMusic \(preset, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            log.error("playMusic \(station.label, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -127,15 +111,15 @@ enum Actions {
         LocalPlayback.stop()
     }
 
-    /// Apply a music-preset change while audio is already playing: switch the
-    /// stream to the new preset, or stop if the user picked "None". No-op when
-    /// nothing is playing — the new preset takes effect at the next pomodoro start.
-    static func reapplyMusic(_ preset: String) {
+    /// Apply a music change while audio is already playing: switch the stream, or
+    /// stop if the user picked "None". No-op when nothing is playing — the new
+    /// station takes effect at the next pomodoro start.
+    static func reapplyMusic(_ station: Station?) {
         guard LocalPlayback.isPlaying else { return }
-        if preset.isEmpty {
-            stopMusic()
+        if let station {
+            playMusic(station)
         } else {
-            playMusic(preset)
+            stopMusic()
         }
     }
 

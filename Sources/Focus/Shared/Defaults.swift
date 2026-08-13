@@ -3,26 +3,41 @@ import Foundation
 /// User-tunable preferences persisted in UserDefaults. Defaults to the classic
 /// 25 / 5 pomodoro split if unset.
 enum Defaults {
+    /// The app's preference domain, named explicitly rather than left to
+    /// `UserDefaults.standard`.
+    ///
+    /// `.standard` picks its domain from `Bundle.main.bundleIdentifier`, and the
+    /// documented install path puts a `/usr/local/bin/focus` symlink on `$PATH`.
+    /// Launched through it, the process has no bundle to find and no identifier,
+    /// so `.standard` resolves somewhere else entirely and the CLI reads none of
+    /// the settings the menu bar app wrote. Naming the suite keeps both halves of
+    /// the binary on one domain.
+    /// Settable so tests can point at a scratch domain. Naming the real one means
+    /// tests would otherwise rewrite the user's live preferences.
+    static var store = UserDefaults(suiteName: bundleIdentifier) ?? .standard
+
+    private static let bundleIdentifier = "com.nchourrout.focus"
+
     private static let workKey = "workMinutes"
     private static let breakKey = "breakMinutes"
 
     static var workMinutes: Int {
         get {
-            let v = UserDefaults.standard.integer(forKey: workKey)
+            let v = store.integer(forKey: workKey)
             return v > 0 ? v : 25
         }
         set {
-            UserDefaults.standard.set(max(1, newValue), forKey: workKey)
+            store.set(max(1, newValue), forKey: workKey)
         }
     }
 
     static var breakMinutes: Int {
         get {
-            let v = UserDefaults.standard.integer(forKey: breakKey)
+            let v = store.integer(forKey: breakKey)
             return v > 0 ? v : 5
         }
         set {
-            UserDefaults.standard.set(max(1, newValue), forKey: breakKey)
+            store.set(max(1, newValue), forKey: breakKey)
         }
     }
 
@@ -31,8 +46,8 @@ enum Defaults {
     static var blockDuringPomodoro: Bool {
         // Use object(forKey:) so an unset key reads as the default (true), not
         // false (which is what UserDefaults.bool returns on absence).
-        get { UserDefaults.standard.object(forKey: blockKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: blockKey) }
+        get { store.object(forKey: blockKey) as? Bool ?? true }
+        set { store.set(newValue, forKey: blockKey) }
     }
 
     private static let dohKey = "blockDoHEndpoints"
@@ -41,8 +56,8 @@ enum Defaults {
     /// browsers configured with "Secure DNS" fall back to the OS resolver
     /// (which honours /etc/hosts). Default on.
     static var blockDoHEndpoints: Bool {
-        get { UserDefaults.standard.object(forKey: dohKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: dohKey) }
+        get { store.object(forKey: dohKey) as? Bool ?? true }
+        set { store.set(newValue, forKey: dohKey) }
     }
 
     /// Argv suffix for `block` / `toggle` reflecting the current DoH preference.
@@ -60,8 +75,8 @@ enum Defaults {
     /// (work → break → work …) until you stop it. Use `object(forKey:)` so an
     /// unset key reads as the default (true), not `bool`'s on-absence false.
     static var autoStartNextSession: Bool {
-        get { UserDefaults.standard.object(forKey: autoStartKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: autoStartKey) }
+        get { store.object(forKey: autoStartKey) as? Bool ?? true }
+        set { store.set(newValue, forKey: autoStartKey) }
     }
 
     private static let longBreakKey = "longBreakMinutes"
@@ -70,10 +85,10 @@ enum Defaults {
     /// sessions. Default 15 (classic Pomodoro long break).
     static var longBreakMinutes: Int {
         get {
-            let v = UserDefaults.standard.integer(forKey: longBreakKey)
+            let v = store.integer(forKey: longBreakKey)
             return v > 0 ? v : 15
         }
-        set { UserDefaults.standard.set(max(1, newValue), forKey: longBreakKey) }
+        set { store.set(max(1, newValue), forKey: longBreakKey) }
     }
 
     private static let sessionsBeforeLongBreakKey = "sessionsBeforeLongBreak"
@@ -82,10 +97,10 @@ enum Defaults {
     /// short one. Default 4 (the canonical pomodoro cadence).
     static var sessionsBeforeLongBreak: Int {
         get {
-            let v = UserDefaults.standard.integer(forKey: sessionsBeforeLongBreakKey)
+            let v = store.integer(forKey: sessionsBeforeLongBreakKey)
             return v > 0 ? v : 4
         }
-        set { UserDefaults.standard.set(max(1, newValue), forKey: sessionsBeforeLongBreakKey) }
+        set { store.set(max(1, newValue), forKey: sessionsBeforeLongBreakKey) }
     }
 
     private static let stopAfterSetKey = "stopAfterSet"
@@ -96,8 +111,8 @@ enum Defaults {
     /// the menu bar app posts a notification offering to start another set.
     /// Default off, so existing users keep the continuous long-break cadence.
     static var stopAfterSet: Bool {
-        get { UserDefaults.standard.object(forKey: stopAfterSetKey) as? Bool ?? false }
-        set { UserDefaults.standard.set(newValue, forKey: stopAfterSetKey) }
+        get { store.object(forKey: stopAfterSetKey) as? Bool ?? false }
+        set { store.set(newValue, forKey: stopAfterSetKey) }
     }
 
     private static let phaseSoundsKey = "playPhaseSounds"
@@ -106,23 +121,19 @@ enum Defaults {
     /// (session start, break start, break end). Default on. Independent of
     /// notification sounds so it still fires under Do-Not-Disturb.
     static var playPhaseSounds: Bool {
-        get { UserDefaults.standard.object(forKey: phaseSoundsKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: phaseSoundsKey) }
+        get { store.object(forKey: phaseSoundsKey) as? Bool ?? true }
+        set { store.set(newValue, forKey: phaseSoundsKey) }
     }
 
-    private static let pomodoroMusicKey = "pomodoroMusic"
+    private static let pomodoroStationKey = "pomodoroMusic"
 
-    /// Preset name (see `MusicPresets`) to auto-start when a pomodoro begins.
-    /// Empty string means no music auto-start. Stored values that aren't a
-    /// known preset (a stale name from an older release, or a URL set via
-    /// `defaults write`) read back as "" so the Settings Picker doesn't show
-    /// a blank selection. URL-based music is still reachable through the CLI's
-    /// `focus pomodoro start --music https://...`, which bypasses this default.
-    static var pomodoroMusic: String {
-        get {
-            let raw = UserDefaults.standard.string(forKey: pomodoroMusicKey) ?? ""
-            return MusicPresets.names.contains(raw) ? raw : ""
-        }
-        set { UserDefaults.standard.set(newValue, forKey: pomodoroMusicKey) }
+    /// Which `Station` to auto-start when a pomodoro begins, or nil for silence.
+    /// Stored as a preset name, so a stale name from an older release (or a URL
+    /// written by hand with `defaults write`) reads back as nil rather than
+    /// showing a blank selection in Settings. URL-based music is still reachable
+    /// through `focus pomodoro start --music https://…`, which overrides this.
+    static var pomodoroStation: Station? {
+        get { Station(preset: store.string(forKey: pomodoroStationKey) ?? "") }
+        set { store.set(newValue?.presetName ?? "", forKey: pomodoroStationKey) }
     }
 }

@@ -29,10 +29,14 @@ enum Paths {
     }
 
     /// Absolute path to the running executable, used to re-invoke ourselves.
+    ///
+    /// Symlinks are resolved because the sudoers drop-in whitelists the binary
+    /// inside Focus.app by its real path. Invoked through the
+    /// `/usr/local/bin/focus` symlink, an unresolved path makes every `sudo -n`
+    /// call fall outside the rule, so the site block silently fails to apply —
+    /// and the daemon's warning about it goes to /dev/null.
     static var selfExecutable: URL {
-        if let path = Bundle.main.executablePath {
-            return URL(fileURLWithPath: path)
-        }
-        return URL(fileURLWithPath: CommandLine.arguments[0])
+        let path = Bundle.main.executablePath ?? CommandLine.arguments[0]
+        return URL(fileURLWithPath: path).resolvingSymlinksInPath()
     }
 }

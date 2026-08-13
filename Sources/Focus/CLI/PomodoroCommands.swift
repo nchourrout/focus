@@ -16,39 +16,44 @@ extension Pomodoro {
             abstract: "start a pomodoro in the background"
         )
 
+        // Every override is optional: omitted means "use the Settings value", so
+        // the CLI and the menu bar start identical sessions. See `PomodoroPlan`.
         @Argument(help: "What you're working on")
         var goal: String
 
-        @Option(help: ArgumentHelp("Work minutes (default 25)", valueName: "MINS"))
-        var work: Int = 25
+        @Option(help: ArgumentHelp("Work minutes (default: your Settings value)", valueName: "MINS"))
+        var work: Int?
 
-        @Option(name: .customLong("break"), help: ArgumentHelp("Break minutes (default 5)", valueName: "MINS"))
-        var breakMinutes: Int = 5
+        @Option(name: .customLong("break"),
+                help: ArgumentHelp("Break minutes (default: your Settings value)", valueName: "MINS"))
+        var breakMinutes: Int?
 
-        @Option(help: "Music preset or http(s):// stream URL (default FOCUS_MUSIC_URI)")
+        @Option(help: "Music preset or http(s):// stream URL (default: your Settings value, else FOCUS_MUSIC_URI)")
         var music: String?
 
         @Flag(inversion: .prefixedNo,
               exclusivity: .exclusive,
-              help: "Block websites for the duration of the session (default: yes)")
-        var block: Bool = true
+              help: "Block websites for the duration of the session (default: your Settings value)")
+        var block: Bool?
 
         func validate() throws {
-            if work <= 0 {
+            if let work, work <= 0 {
                 throw ValidationError("--work must be a positive integer")
             }
-            if breakMinutes <= 0 {
+            if let breakMinutes, breakMinutes <= 0 {
                 throw ValidationError("--break must be a positive integer")
             }
         }
 
         func run() throws {
             try PomodoroDaemon.launch(
-                goal: goal,
-                workMinutes: work,
-                breakMinutes: breakMinutes,
-                music: music,
-                block: block
+                PomodoroPlan.fromSettings(
+                    goal: goal,
+                    workMinutes: work,
+                    breakMinutes: breakMinutes,
+                    block: block,
+                    music: music
+                )
             )
         }
     }
@@ -136,14 +141,15 @@ struct PomodoroRun: ParsableCommand {
     @Flag(inversion: .prefixedNo) var block: Bool = true
 
     func run() {
-        PomodoroDaemon.runDaemon(
+        // The launching process already resolved everything; `--music` arrives as
+        // a resolved stream URI, which maps back to its preset when it is one.
+        let plan = PomodoroPlan(
             goal: goal,
-            workEnd: workEnd,
-            breakEnd: breakEnd,
             workMinutes: workMinutes,
             breakMinutes: breakMinutes,
-            music: music,
-            block: block
+            block: block,
+            station: music.flatMap { Station(uri: $0) }
         )
+        PomodoroDaemon.runDaemon(plan, workEnd: workEnd, breakEnd: breakEnd)
     }
 }

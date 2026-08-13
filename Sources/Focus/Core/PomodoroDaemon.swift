@@ -1,11 +1,14 @@
 import Foundation
 import Darwin
 
+/// Process-level lifecycle for a pomodoro: fork the detached daemon, hand it a
+/// plan, and stop it again. The loop the daemon actually runs lives in
+/// `SessionRunner`.
 enum PomodoroDaemon {
     /// Launch a new pomodoro. Writes state, forks a detached `_pomodoro-run` child,
-    /// backfills the PID into the state file, and returns. Recovers from a stale
-    /// state file (dead PID) by clearing and proceeding.
-    static func launch(goal: String, workMinutes: Int, breakMinutes: Int, music: String?, block: Bool) throws {
+    /// and returns. Recovers from a stale state file (dead PID) by clearing and
+    /// proceeding.
+    static func launch(_ plan: PomodoroPlan) throws {
         let session = PomodoroSession.default
         if let existing = session.current {
             // Verify the PID is both alive *and* actually our daemon, to guard against
@@ -16,140 +19,55 @@ enum PomodoroDaemon {
             print("focus: clearing stale pomodoro state from previous session")
             // Use the prior session's block flag — if it was running with --no-block,
             // there's nothing to unblock.
-            clearEverything(unblock: existing.block)
+            SessionRunner.endSession(unblock: existing.block, clearing: session,
+                                     effects: LiveSessionEffects())
         }
 
         let now = Date().timeIntervalSince1970
-        // Session 1's break follows the same cadence as the rest: short unless the
-        // user set sessionsBeforeLongBreak to 1, in which case every break is long.
-        let firstLong = session.hasLongBreak(sessionNumber: 1, every: Defaults.sessionsBeforeLongBreak)
-        let (workEnd, breakEnd) = session.deadlines(
-            workMinutes: workMinutes,
-            breakMinutes: firstLong ? Defaults.longBreakMinutes : breakMinutes, at: now
+        let first = session.firstSession(
+            plan: plan, cadence: .fromSettings, pid: 0, at: now
         )
-        // Single source of truth for preset / env-var resolution. Fails fast on unknown preset.
-        let musicURI = try MusicPresets.resolve(target: music, explicitURI: nil)
 
         // Spawn the daemon first so we can write the state file once, with the real PID.
         // Writing a placeholder state beforehand opened a window where `pomodoro stop`
         // could see pid=0, skip the signal, and leak the daemon.
         var args = [
             "_pomodoro-run",
-            "--goal", goal,
-            "--work-end", String(workEnd),
-            "--break-end", String(breakEnd),
-            "--work-minutes", String(workMinutes),
-            "--break-minutes", String(breakMinutes),
+            "--goal", plan.goal,
+            "--work-end", String(first.workEnd),
+            "--break-end", String(first.breakEnd),
+            "--work-minutes", String(plan.workMinutes),
+            "--break-minutes", String(plan.breakMinutes),
         ]
-        if let music = musicURI {
-            args.append(contentsOf: ["--music", music])
+        if let station = plan.station {
+            args.append(contentsOf: ["--music", station.uri])
         }
-        if !block { args.append("--no-block") }
+        if !plan.block { args.append("--no-block") }
         let handle = try Shell.spawn(Shell.Command(Paths.selfExecutable, args))
 
-        let active = PomodoroSession.Active(
-            goal: goal, pid: handle.pid, startedAt: now,
-            workEnd: workEnd, breakEnd: breakEnd, music: musicURI, block: block,
-            sessionNumber: 1, isLongBreak: firstLong
-        )
+        var active = first
+        active.pid = handle.pid
         try session.save(active)
 
-        print("focus: pomodoro started — \(workMinutes)min work, \(breakMinutes)min break — \(goal)")
+        print("focus: pomodoro started — \(plan.workMinutes)min work, \(plan.breakMinutes)min break — \(plan.goal)")
     }
 
-    /// Body of the hidden `_pomodoro-run` subcommand. Runs in the detached child process.
+    /// Body of the hidden `_pomodoro-run` subcommand. Runs in the detached child
+    /// process, then hands off to `SessionRunner` for the loop itself.
     ///
-    /// Design notes:
     /// - We ignore SIGHUP and setsid() ourselves so we survive the parent shell exiting.
     /// - We do NOT install a SIGTERM handler. Default behavior is to terminate, which
-    ///   means cleanup on interruption is the responsibility of `pomodoro stop`'s fallback
-    ///   path. Normal completion cleans up explicitly at the end of this function.
-    /// - The block covers work phases only: it's lifted at the start of each
-    ///   break so the user can browse freely while resting, then re-applied when
-    ///   the next work phase begins.
-    /// - When `Defaults.autoStartNextSession` is on, the daemon loops: after the
-    ///   break it asks PomodoroSession for the next iteration, rewrites the state
-    ///   file, and starts a fresh work phase with the same goal. Music carries
-    ///   over so we don't restart playback. The setting is re-read each iteration,
-    ///   so flipping it off mid-session takes effect at the next break.
-    static func runDaemon(
-        goal: String, workEnd: Double, breakEnd: Double,
-        workMinutes: Int, breakMinutes: Int,
-        music: String?, block: Bool
-    ) {
+    ///   means cleanup on interruption is the responsibility of `stop()`'s fallback
+    ///   path. Normal completion cleans up inside the runner.
+    static func runDaemon(_ plan: PomodoroPlan, workEnd: Double, breakEnd: Double) {
         signal(SIGHUP, SIG_IGN)
         _ = Darwin.setsid()
 
-        if block { applyBlock() }
-
-        if let music = music, !music.isEmpty {
-            Shell.run(Shell.Command(Paths.selfExecutable, ["music", music]))
-        }
-
-        let session = PomodoroSession.default
-        var currentWorkEnd = workEnd
-        var currentBreakEnd = breakEnd
-
-        while true {
-            sleepUntil(currentWorkEnd)
-
-            // Stop-after-set: when cycling is on and the user opted to stop at
-            // each set boundary (every Nth session — the same cadence that earns
-            // the long break), end here without taking the final break. Clean up
-            // as a normal stop, then leave a terminal marker so the menu bar app
-            // posts the "start another set" notification. Re-read each iteration
-            // so flipping the setting mid-run takes effect at the next boundary.
-            if Defaults.autoStartNextSession, Defaults.stopAfterSet,
-               let prev = session.current,
-               session.hasLongBreak(sessionNumber: prev.sessionNumber,
-                                     every: Defaults.sessionsBeforeLongBreak) {
-                clearEverything(unblock: block)
-                try? session.save(session.completedSet(from: prev))
-                return
-            }
-
-            // Entering the break: lift the block so the user can browse freely
-            // while resting. Re-applied when the next work phase begins.
-            if block { removeBlock() }
-
-            sleepUntil(currentBreakEnd)
-
-            if !Defaults.autoStartNextSession { break }
-
-            // Loop: roll deadlines and persist new state. The menu bar app
-            // notices the workEnd change and emits the "Starting next session"
-            // notification on its next refresh.
-            //
-            // If the state file vanished mid-loop (e.g. `pomodoro stop` raced
-            // with the break→work transition), bail out instead of writing a
-            // phantom next session. Pre-refactor code rolled deadlines
-            // unconditionally and only skipped the save; the new behavior
-            // matches stop's intent of ending the daemon cleanly.
-            if let prev = session.current {
-                // Long-break cadence is re-read each iteration so Settings changes
-                // take effect at the next boundary, matching autoStart's behavior.
-                let next = session.nextSession(
-                    after: prev,
-                    workMinutes: workMinutes, breakMinutes: breakMinutes,
-                    longBreakMinutes: Defaults.longBreakMinutes,
-                    sessionsBeforeLongBreak: Defaults.sessionsBeforeLongBreak
-                )
-                try? session.save(next)
-                currentWorkEnd = next.workEnd
-                currentBreakEnd = next.breakEnd
-                // Next work phase is starting now — restore the block.
-                if block { applyBlock() }
-            } else {
-                break
-            }
-        }
-
-        // The block was already lifted at the last break boundary, so this unblock
-        // is normally redundant. Keep it anyway as a safety net: if that
-        // break-time removeBlock() silently failed (transient sudo error), this
-        // is the last chance to clear the block before the session ends.
-        // removeBlock() is idempotent, so the redundant case is harmless.
-        clearEverything(unblock: block)
+        SessionRunner(
+            plan: plan,
+            session: .default,
+            effects: LiveSessionEffects()
+        ).run(workEnd: workEnd, breakEnd: breakEnd)
     }
 
     static func stop() {
@@ -169,47 +87,9 @@ enum PomodoroDaemon {
             }
         }
         // Daemon doesn't clean up on SIGTERM (no handler), so do it here.
-        // Only unblock if the session asked us to block in the first place — sparing
-        // a sudo -n call (and the matching sudoers prompt if it weren't installed).
-        clearEverything(unblock: state.block)
+        SessionRunner.endSession(unblock: state.block, clearing: session,
+                                 effects: LiveSessionEffects())
         print("focus: pomodoro stopped")
-    }
-
-    private static func clearEverything(unblock: Bool) {
-        if unblock { removeBlock() }
-        // Music doesn't need root; call Core directly instead of forking the CLI.
-        LocalPlayback.stop()
-        PomodoroSession.default.clear()
-    }
-
-    /// Apply the site block (plus DoH suppression) via sudo, warning on failure.
-    /// The UI can't surface a daemon-side sudo failure, so warn here. This is the
-    /// daemon's only console side effect (everything else flows through the state
-    /// file, which AppState reads).
-    private static func applyBlock() {
-        let blocked = Shell.run(Shell.Command(
-            Paths.selfExecutable,
-            ["block"] + Defaults.dohSuppressionFlags,
-            sudo: true
-        )).status == 0
-        if !blocked {
-            FileHandle.standardError.write(Data(
-                "focus: warning — sudo -n block failed. Is /etc/sudoers.d/focus installed?\n".utf8
-            ))
-        }
-    }
-
-    /// Lift the site block via sudo. Idempotent — unblocking when nothing is
-    /// blocked is a harmless no-op.
-    private static func removeBlock() {
-        Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
-    }
-
-    private static func sleepUntil(_ deadline: TimeInterval) {
-        let remaining = deadline - Date().timeIntervalSince1970
-        if remaining > 0 {
-            Thread.sleep(forTimeInterval: remaining)
-        }
     }
 }
 

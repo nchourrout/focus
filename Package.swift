@@ -9,10 +9,11 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
-        // Pin: newer versions (1.17.0+) use the `#Preview` macro, which requires the
-        // full Xcode (for the PreviewsMacros plugin). 1.16.1 is the last release that
-        // builds with just Command Line Tools.
-        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", exact: "1.14.0"),
+        // Pin: 1.16.0+ use the `#Preview` macro and 3.x also uses SwiftUI's `@Entry`.
+        // Both need macro plugins that only ship with the full Xcode, so anything
+        // above 1.15.0 fails to build with just Command Line Tools. Revisit when
+        // Xcode is a build requirement anyway.
+        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", exact: "1.15.0"),
     ],
     targets: [
         .executableTarget(

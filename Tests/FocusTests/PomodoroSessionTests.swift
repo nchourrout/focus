@@ -113,6 +113,45 @@ import Foundation
         #expect(breakEnd == workEnd + 5 * 60)
     }
 
+    @Test func firstSessionSchedulesFromThePlan() throws {
+        let (session, _) = try makeSandbox()
+        let plan = PomodoroPlan(
+            goal: "ship it", workMinutes: 25, breakMinutes: 5,
+            block: true, station: .preset("dronezone")
+        )
+        let cadence = PomodoroCadence(
+            longBreakMinutes: 15, sessionsBeforeLongBreak: 4,
+            keepCycling: true, stopAfterSet: false
+        )
+        let first = session.firstSession(plan: plan, cadence: cadence, pid: 99, at: 1000)
+
+        #expect(first.sessionNumber == 1)
+        #expect(first.goal == "ship it")
+        #expect(first.pid == 99)
+        #expect(first.block)
+        #expect(first.music == MusicPresets.uri(for: "dronezone"))
+        #expect(first.workEnd == 1000 + 25 * 60)
+        #expect(first.breakEnd == first.workEnd + 5 * 60)
+        #expect(!first.isLongBreak, "session 1 of 4 takes the short break")
+    }
+
+    @Test func firstSessionTakesTheLongBreakWhenEveryBreakIsLong() throws {
+        let (session, _) = try makeSandbox()
+        let plan = PomodoroPlan(
+            goal: "ship it", workMinutes: 25, breakMinutes: 5, block: true, station: nil
+        )
+        // "Long break after every 1 session" makes even the first break long.
+        let cadence = PomodoroCadence(
+            longBreakMinutes: 15, sessionsBeforeLongBreak: 1,
+            keepCycling: true, stopAfterSet: false
+        )
+        let first = session.firstSession(plan: plan, cadence: cadence, pid: 1, at: 1000)
+
+        #expect(first.isLongBreak)
+        #expect(first.breakEnd - first.workEnd == 15 * 60)
+        #expect(first.music == nil, "a silent plan writes no music URI")
+    }
+
     @Test func nextSessionCarriesPidGoalMusicBlockAndRollsDeadlines() throws {
         let (session, _) = try makeSandbox()
         let prev = makeActive(

@@ -1,83 +1,62 @@
 import Foundation
 import Darwin
 
-/// Local audio file playback via `afplay`. Loop mode spawns a second instance of
-/// this binary (`_afplay-loop`) that replays the file until killed. No shell is
-/// involved on the hot path, so filenames with metacharacters are safe.
+/// Focus audio playback, whatever the source. Streams run in a detached
+/// `_stream-play` subprocess driven by AVPlayer; local files go to `afplay`,
+/// looped by a `_afplay-loop` subprocess when asked. Both are tracked through
+/// the same PID file, so `stop()` reaches either one.
+///
+/// No shell is involved on the hot path, so filenames with metacharacters are safe.
 enum LocalPlayback {
-    static func start(path: URL, loop: Bool) throws {
-        let (exe, args): (URL, [String]) = loop
-            ? (Paths.selfExecutable, ["_afplay-loop", "--file", path.path])
-            : (URL(fileURLWithPath: "/usr/bin/afplay"), [path.path])
-        try launch(exe, args, label: path.lastPathComponent)
-    }
-
-    /// Launch a detached `_stream-play` subprocess to play an HTTP audio stream.
-    /// Tracked via the same PID file as afplay, so `stop()` works for both.
-    static func startStream(url: String) throws {
-        // Callers pass resolved URIs (the daemon round-trips through the CLI),
-        // so map back to the preset name here — it's the label the menu shows.
-        let label = MusicPresets.name(forURI: url) ?? url
-        try launch(Paths.selfExecutable, ["_stream-play", "--url", url], label: label)
-    }
-
-    /// One-call helper: resolve a preset name / URI and start playback. Used by
-    /// the menu bar app's music actions; the CLI's `MusicCommand.run` does the
-    /// equivalent inline because it needs different output messaging per case.
-    static func play(target: String) throws {
-        guard let uri = try MusicPresets.resolve(target: target, explicitURI: nil) else {
-            throw CLIError.missingMusicSource
+    /// Stop whatever is playing and start this station. `loop` only applies to
+    /// local files; streams run until stopped either way.
+    static func play(_ station: Station, loop: Bool = false) throws {
+        let (executable, arguments): (URL, [String])
+        switch station {
+        case .preset, .stream:
+            executable = Paths.selfExecutable
+            arguments = ["_stream-play", "--url", station.uri]
+        case .file(let url):
+            if loop {
+                executable = Paths.selfExecutable
+                arguments = ["_afplay-loop", "--file", url.path]
+            } else {
+                executable = URL(fileURLWithPath: "/usr/bin/afplay")
+                arguments = [url.path]
+            }
         }
-        guard uri.hasPrefix("http://") || uri.hasPrefix("https://") else {
-            throw MusicPresets.ResolveError.unknownPreset(target)
-        }
-        try startStream(url: uri)
-    }
-
-    /// Stop any current playback, then start the new one and record its PID plus
-    /// a display label (preset name, URL, or filename) so `stop()` can reach it
-    /// later and the menu bar can say what's playing. File format: "pid\nlabel".
-    private static func launch(_ executable: URL, _ arguments: [String], label: String) throws {
         stop()
         let handle = try Shell.spawn(Shell.Command(executable, arguments))
-        try "\(handle.pid)\n\(label)".write(to: Paths.musicPid, atomically: true, encoding: .utf8)
+        // File format: "pid\nlabel". The label lets the menu bar say what's
+        // playing without re-deriving it from the stream URL.
+        try "\(handle.pid)\n\(station.label)".write(to: Paths.musicPid, atomically: true, encoding: .utf8)
     }
 
-    /// Read and parse the tracked playback PID, or nil if the file is absent or
-    /// malformed. Shared by `isPlaying` and `stop()`.
-    private static func trackedPID() -> Int32? {
-        guard let line = trackedLines()?.first else { return nil }
-        return Int32(line)
-    }
-
-    /// PID-file lines: [pid, label?]. Nil if the file is absent.
-    private static func trackedLines() -> [String]? {
-        guard let text = try? String(contentsOf: Paths.musicPid, encoding: .utf8) else {
-            return nil
-        }
-        return text.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-    }
-
-    /// True if a tracked playback process is currently alive. Reads the same PID
-    /// file `stop()` uses, so it reflects playback started by the CLI, the
+    /// What's playing right now, from a single read of the PID file.
+    ///
+    /// `station` is nil for the label-less PID files older builds wrote, so
+    /// callers fall back to a generic "playing" state. Reads the same file
+    /// `stop()` uses, which is why this reflects playback started by the CLI, the
     /// pomodoro daemon, or the menu bar alike — not just this process.
-    static var isPlaying: Bool {
-        guard let pid = trackedPID() else { return false }
-        return isPIDAlive(pid)
+    struct Playing {
+        var isPlaying: Bool
+        var station: Station?
     }
 
-    /// Display label of the current playback (preset name, URL, or filename),
-    /// or nil when nothing is playing. Empty-label PID files (written by older
-    /// builds) report nil too — callers fall back to a generic "playing" state.
-    static var nowPlaying: String? {
-        guard isPlaying, let lines = trackedLines(), lines.count > 1 else { return nil }
-        let label = lines[1]
-        return label.isEmpty ? nil : label
+    /// The menu bar asks for this once a second, so it costs one file read and
+    /// one liveness probe rather than repeating both per property.
+    static var playing: Playing {
+        guard let lines = trackedLines(), let pid = lines.first.flatMap(Int32.init),
+              isPIDAlive(pid) else {
+            return Playing(isPlaying: false, station: nil)
+        }
+        return Playing(isPlaying: true, station: lines.count > 1 ? Station(label: lines[1]) : nil)
     }
+
+    static var isPlaying: Bool { playing.isPlaying }
 
     static func stop() {
-        guard let pid = trackedPID(), pid > 0 else {
+        guard let pid = trackedLines()?.first.flatMap(Int32.init), pid > 0 else {
             try? FileManager.default.removeItem(at: Paths.musicPid)
             return
         }
@@ -103,5 +82,16 @@ enum LocalPlayback {
             let result = Shell.run(Shell.Command(path: "/usr/bin/afplay", [file]))
             if result.status != 0 { return }
         }
+    }
+
+    // MARK: Private
+
+    /// PID-file lines: [pid, label?]. Nil if the file is absent.
+    private static func trackedLines() -> [String]? {
+        guard let text = try? String(contentsOf: Paths.musicPid, encoding: .utf8) else {
+            return nil
+        }
+        return text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
     }
 }

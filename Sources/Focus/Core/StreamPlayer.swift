@@ -13,9 +13,10 @@ enum StreamPlayer {
         // Own session/process group so the menu bar app's killpg cleanly stops us.
         _ = setsid()
 
-        guard let streamURL = URL(string: url),
-              let scheme = streamURL.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else {
+        // This is a trust boundary — argv reaches us straight from a shell — so
+        // validate, but through the same door everything else uses rather than
+        // hand-rolling a second scheme check.
+        guard let streamURL = Station(uri: url)?.streamURL else {
             FileHandle.standardError.write(Data("focus: refusing to stream non-http(s) URL\n".utf8))
             exit(1)
         }
