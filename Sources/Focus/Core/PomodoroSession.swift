@@ -150,6 +150,26 @@ struct PomodoroSession {
         every > 0 && n % every == 0
     }
 
+    /// Schedule the first session of a run. Same composed rule as
+    /// `nextSession` — session number decides the long break, which decides the
+    /// break length, which decides the deadlines — so the two stay in step.
+    /// Session 1 only earns a long break if the cadence is "every 1".
+    func firstSession(plan: PomodoroPlan, cadence: PomodoroCadence, pid: Int32,
+                      at start: TimeInterval = Date().timeIntervalSince1970) -> Active {
+        let long = hasLongBreak(sessionNumber: 1, every: cadence.sessionsBeforeLongBreak)
+        let (workEnd, breakEnd) = deadlines(
+            workMinutes: plan.workMinutes,
+            breakMinutes: long ? cadence.longBreakMinutes : plan.breakMinutes,
+            at: start
+        )
+        return Active(
+            goal: plan.goal, pid: pid, startedAt: start,
+            workEnd: workEnd, breakEnd: breakEnd,
+            music: plan.station?.uri, block: plan.block,
+            sessionNumber: 1, isLongBreak: long
+        )
+    }
+
     /// Roll an Active into the next iteration of the same session (auto-start).
     /// Goal, pid, music, block are carried over; `sessionNumber` advances and the
     /// break follows the long-break cadence (its length and the recorded

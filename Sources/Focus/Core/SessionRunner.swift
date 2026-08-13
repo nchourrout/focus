@@ -19,17 +19,6 @@ protocol SessionEffects {
     func stopMusic()
 }
 
-extension SessionEffects {
-    /// Tear down everything a run leaves behind. `unblock` is false for a session
-    /// that never blocked, which spares a `sudo -n` call (and the matching prompt
-    /// if the sudoers drop-in weren't installed).
-    func endSession(unblock: Bool, clearing session: PomodoroSession) {
-        if unblock { removeBlock() }
-        stopMusic()
-        session.clear()
-    }
-}
-
 /// The pomodoro run loop: sleep to the work deadline, lift the block for the
 /// break, and either stop or roll into the next session.
 ///
@@ -40,6 +29,18 @@ struct SessionRunner {
     let plan: PomodoroPlan
     let session: PomodoroSession
     let effects: SessionEffects
+
+    /// Tear down everything a run leaves behind. `unblock` is false for a session
+    /// that never blocked, which spares a `sudo -n` call (and the matching prompt
+    /// if the sudoers drop-in weren't installed).
+    ///
+    /// Static because `PomodoroDaemon` ends sessions it never ran: a stale one at
+    /// launch, and the one `stop` signals.
+    static func endSession(unblock: Bool, clearing session: PomodoroSession, effects: SessionEffects) {
+        if unblock { effects.removeBlock() }
+        effects.stopMusic()
+        session.clear()
+    }
 
     /// Run until the session ends. Blocks the calling thread for the duration,
     /// which is why the daemon is a detached process.
@@ -71,7 +72,7 @@ struct SessionRunner {
                let prev = session.current,
                session.hasLongBreak(sessionNumber: prev.sessionNumber,
                                     every: atWorkEnd.sessionsBeforeLongBreak) {
-                effects.endSession(unblock: plan.block, clearing: session)
+                Self.endSession(unblock: plan.block, clearing: session, effects: effects)
                 try? session.save(session.completedSet(from: prev, at: effects.now))
                 return
             }
@@ -111,7 +112,7 @@ struct SessionRunner {
         // break-time removeBlock() silently failed (transient sudo error), this
         // is the last chance to clear the block before the session ends.
         // removeBlock() is idempotent, so the redundant case is harmless.
-        effects.endSession(unblock: plan.block, clearing: session)
+        Self.endSession(unblock: plan.block, clearing: session, effects: effects)
     }
 }
 

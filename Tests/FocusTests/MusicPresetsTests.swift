@@ -7,12 +7,9 @@ import Testing
         #expect(MusicPresets.uri(for: "nope") == nil)
     }
 
-    @Test func reverseLookupRoundTrips() {
-        // Every preset URI maps back to its name — the menu bar relies on this
-        // to recover the station name from the resolved stream URL.
-        for preset in MusicPresets.list {
-            #expect(MusicPresets.name(forURI: preset.uri) == preset.name)
-        }
+    // The URI→name round trip is asserted through Station, which is what
+    // callers actually use — see StationTests.resolvedURIMapsBackToItsPreset.
+    @Test func reverseLookupRejectsUnknownURIs() {
         #expect(MusicPresets.name(forURI: "https://example.com/x") == nil)
     }
 

@@ -13,11 +13,10 @@ struct SettingsContent: View {
             BlockListTab()
                 .tabItem { Label("Block list", systemImage: "nosign") }
         }
-        // Sized to fit the General tab's content (its tallest). When the content
-        // fits, the vertical scroll never engages, so its scrollbar can't steal
-        // horizontal width and cause the slight left/right drift. The ScrollView
-        // stays as a safety net for very large accessibility text sizes.
-        .frame(width: 480, height: 580)
+        // Sized to fit the General tab's content (its tallest). The grouped Form
+        // scrolls on its own when the content doesn't fit — at large accessibility
+        // text sizes, or on the Block list tab.
+        .frame(width: 500, height: 620)
     }
 }
 
@@ -28,87 +27,99 @@ private struct GeneralTab: View {
     @State private var installError: String?
 
     var body: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
-            Toggle(isOn: launchAtLoginBinding) {
-                Text("Launch at login")
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Pomodoro").font(.headline)
-                HStack(spacing: 16) {
-                    Stepper("Work \(workMinutes) min", value: workBinding, in: 1...180)
-                    Stepper("Break \(breakMinutes) min", value: breakBinding, in: 1...60)
-                }
-                Toggle(isOn: blockDuringPomodoroBinding) {
-                    Text("Block websites during pomodoro")
-                }
-                Toggle(isOn: autoStartBinding) {
-                    Text("Keep cycling sessions until I stop")
-                }
-                HStack(spacing: 16) {
-                    Stepper("Long break \(longBreakMinutes) min", value: longBreakBinding, in: 1...60)
-                        // Replaced by the stop-and-ask prompt at the set boundary.
-                        .disabled(stopAfterSet)
-                    Stepper("after every \(sessionsBeforeLongBreak)", value: sessionsBinding, in: 1...12)
-                }
-                .disabled(!Defaults.autoStartNextSession)
-                Toggle(isOn: stopAfterSetBinding) {
-                    Text("Stop after each set and ask to continue")
-                }
-                .disabled(!Defaults.autoStartNextSession)
-                Toggle(isOn: phaseSoundsBinding) {
-                    Text("Play sound at phase transitions")
-                }
-                Picker("Start music with pomodoro", selection: pomodoroMusicBinding) {
-                    Text("None").tag("")
-                    ForEach(MusicPresets.list, id: \.name) { preset in
-                        Text(preset.name.capitalized).tag(preset.name)
+        Form {
+            Section("Session") {
+                Stepper("Work: \(workMinutes) min", value: workBinding, in: 1...180)
+                Stepper("Break: \(breakMinutes) min", value: breakBinding, in: 1...60)
+                Toggle("Block websites while working", isOn: blockDuringPomodoroBinding)
+                Picker("Start music with pomodoro", selection: pomodoroStationBinding) {
+                    Text("None").tag(Station?.none)
+                    ForEach(Station.presets, id: \.self) { station in
+                        Text(station.displayName).tag(Station?.some(station))
                     }
                 }
+                Toggle("Play a sound at each phase change", isOn: phaseSoundsBinding)
             }
 
-            Divider()
+            Section {
+                Toggle("Keep cycling sessions until I stop", isOn: autoStartBinding)
+                Stepper(
+                    "Long break after every \(sessionsBeforeLongBreak) session\(sessionsBeforeLongBreak == 1 ? "" : "s")",
+                    value: sessionsBinding, in: 1...12
+                )
+                .disabled(!autoStart)
+                Stepper("Long break: \(longBreakMinutes) min", value: longBreakBinding, in: 1...60)
+                    // Replaced by the stop-and-ask prompt at the set boundary.
+                    .disabled(!autoStart || stopAfterSet)
+                Toggle("Stop after each set and ask to continue", isOn: stopAfterSetBinding)
+                    .disabled(!autoStart)
+            } header: {
+                Text("Cycling")
+            } footer: {
+                Text(cyclingSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Toggle(isOn: blockDoHBinding) {
-                    Text("Block DNS-over-HTTPS endpoints")
-                }
+            Section {
+                Toggle("Block DNS-over-HTTPS endpoints", isOn: blockDoHBinding)
+            } header: {
+                Text("Websites")
+            } footer: {
                 Text("Forces browsers with Secure DNS enabled to fall back to the system resolver, so site blocks aren't bypassed. Disable if you rely on Cloudflare WARP or iCloud Private Relay.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider()
+            Section {
+                Toggle("Launch at login", isOn: launchAtLoginBinding)
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Image(systemName: permissionInstalled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(permissionInstalled ? .green : .orange)
-                    Text(permissionInstalled ? "System permission: granted" : "System permission: not granted")
+                LabeledContent {
+                    Button(permissionInstalled ? "Reinstall…" : "Grant…") {
+                        installPermission()
+                    }
+                } label: {
+                    Label {
+                        Text(permissionInstalled ? "Granted" : "Not granted")
+                    } icon: {
+                        Image(systemName: permissionInstalled
+                              ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(permissionInstalled ? .green : .orange)
+                    }
                 }
-                Text("Focus needs a one-time admin password to install a `/etc/sudoers.d` entry allowing it to edit /etc/hosts without prompting on every toggle.")
+
+                if let installError {
+                    Text(installError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } header: {
+                Text("System")
+            } footer: {
+                Text("Editing /etc/hosts needs a one-time admin password. Focus installs an /etc/sudoers.d entry so it never has to ask again.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button(permissionInstalled ? "Reinstall permission…" : "Grant permission…") {
-                    installPermission()
-                }
             }
+        }
+        .formStyle(.grouped)
+    }
 
-            if let installError = installError {
-                Text(installError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+    /// Spells out what the three cycling controls add up to, so the user doesn't
+    /// have to simulate them in their head.
+    private var cyclingSummary: String {
+        guard autoStart else {
+            return "One work phase, one break, then Focus stops."
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        let every = sessionsBeforeLongBreak
+        let sessions = "\(every) session\(every == 1 ? "" : "s")"
+        if stopAfterSet {
+            return "Runs \(sessions), skips the last break, then asks whether to start another set."
         }
+        return "Runs continuously, taking a \(longBreakMinutes) min break after every \(sessions) instead of \(breakMinutes) min."
     }
 
     private var permissionInstalled: Bool {
@@ -129,6 +140,7 @@ private struct GeneralTab: View {
     private var longBreakMinutes: Int { _ = refreshTick; return Defaults.longBreakMinutes }
     private var sessionsBeforeLongBreak: Int { _ = refreshTick; return Defaults.sessionsBeforeLongBreak }
     private var stopAfterSet: Bool { _ = refreshTick; return Defaults.stopAfterSet }
+    private var autoStart: Bool { _ = refreshTick; return Defaults.autoStartNextSession }
 
     /// Wrap a Defaults accessor in a Binding that bumps `refreshTick` on every
     /// write, so dependent computed properties re-evaluate. Use this for the
@@ -165,12 +177,12 @@ private struct GeneralTab: View {
     private var sessionsBinding: Binding<Int> {
         defaultsBinding(get: { Defaults.sessionsBeforeLongBreak }, set: { Defaults.sessionsBeforeLongBreak = $0 })
     }
-    private var pomodoroMusicBinding: Binding<String> {
+    private var pomodoroStationBinding: Binding<Station?> {
         Binding(
-            get: { _ = refreshTick; return Defaults.pomodoroMusic },
+            get: { _ = refreshTick; return Defaults.pomodoroStation },
             set: { newValue in
-                guard newValue != Defaults.pomodoroMusic else { return }
-                Defaults.pomodoroMusic = newValue
+                guard newValue != Defaults.pomodoroStation else { return }
+                Defaults.pomodoroStation = newValue
                 refreshTick += 1
                 // If music is already playing, switch it live so the change is
                 // audible immediately rather than only at the next start.
@@ -219,13 +231,18 @@ private struct GeneralTab: View {
 
 private struct ShortcutsTab: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            KeyboardShortcuts.Recorder("Start / stop pomodoro", name: .togglePomodoro)
-            KeyboardShortcuts.Recorder("Toggle website block", name: .toggleBlock)
-            Spacer()
+        Form {
+            Section {
+                KeyboardShortcuts.Recorder("Start / stop pomodoro", name: .togglePomodoro)
+                KeyboardShortcuts.Recorder("Toggle website block", name: .toggleBlock)
+            } footer: {
+                Text("These work anywhere, even when Focus isn't the active app. Click a field and press the combination you want, or use the clear button to remove it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .formStyle(.grouped)
     }
 }
 

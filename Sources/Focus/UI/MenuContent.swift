@@ -26,14 +26,14 @@ struct MenuContent: View {
             // A checkmark marks the playing preset below; the header is only
             // needed when the stream isn't a preset (custom URL, local file,
             // or a label-less PID file from an older build).
-            if state.musicPlaying, currentPresetName == nil {
+            if state.musicPlaying, state.musicNowPlaying?.presetName == nil {
                 Text(state.musicNowPlaying.map { "Now playing: \($0.displayName)" } ?? "Now playing")
                 Divider()
             }
-            ForEach(MusicPresets.list, id: \.name) { preset in
-                Toggle(preset.name.capitalized, isOn: Binding(
-                    get: { currentPresetName == preset.name },
-                    set: { _ in Actions.playMusic(.preset(preset.name)) }
+            ForEach(Station.presets, id: \.self) { station in
+                Toggle(station.displayName, isOn: Binding(
+                    get: { state.musicNowPlaying == station },
+                    set: { _ in Actions.playMusic(station) }
                 ))
             }
             Divider()
@@ -54,12 +54,6 @@ struct MenuContent: View {
 
         Button("Quit Focus") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
-    }
-
-    /// The playing station's preset name, or nil when stopped / playing a
-    /// non-preset stream. Drives the submenu checkmark.
-    private var currentPresetName: String? {
-        state.musicNowPlaying?.presetName
     }
 
     private var musicTitle: String {

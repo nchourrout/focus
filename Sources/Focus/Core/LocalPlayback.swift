@@ -32,23 +32,31 @@ enum LocalPlayback {
         try "\(handle.pid)\n\(station.label)".write(to: Paths.musicPid, atomically: true, encoding: .utf8)
     }
 
-    /// True if a tracked playback process is currently alive. Reads the same PID
-    /// file `stop()` uses, so it reflects playback started by the CLI, the
+    /// What's playing right now, from a single read of the PID file.
+    ///
+    /// `station` is nil for the label-less PID files older builds wrote, so
+    /// callers fall back to a generic "playing" state. Reads the same file
+    /// `stop()` uses, which is why this reflects playback started by the CLI, the
     /// pomodoro daemon, or the menu bar alike — not just this process.
-    static var isPlaying: Bool {
-        guard let pid = trackedPID() else { return false }
-        return isPIDAlive(pid)
+    struct Playing {
+        var isPlaying: Bool
+        var station: Station?
     }
 
-    /// What's playing, or nil when stopped. Nil too for the label-less PID files
-    /// older builds wrote — callers fall back to a generic "playing" state.
-    static var nowPlaying: Station? {
-        guard isPlaying, let lines = trackedLines(), lines.count > 1 else { return nil }
-        return Station(label: lines[1])
+    /// The menu bar asks for this once a second, so it costs one file read and
+    /// one liveness probe rather than repeating both per property.
+    static var playing: Playing {
+        guard let lines = trackedLines(), let pid = lines.first.flatMap(Int32.init),
+              isPIDAlive(pid) else {
+            return Playing(isPlaying: false, station: nil)
+        }
+        return Playing(isPlaying: true, station: lines.count > 1 ? Station(label: lines[1]) : nil)
     }
+
+    static var isPlaying: Bool { playing.isPlaying }
 
     static func stop() {
-        guard let pid = trackedPID(), pid > 0 else {
+        guard let pid = trackedLines()?.first.flatMap(Int32.init), pid > 0 else {
             try? FileManager.default.removeItem(at: Paths.musicPid)
             return
         }
@@ -77,13 +85,6 @@ enum LocalPlayback {
     }
 
     // MARK: Private
-
-    /// Read and parse the tracked playback PID, or nil if the file is absent or
-    /// malformed. Shared by `isPlaying` and `stop()`.
-    private static func trackedPID() -> Int32? {
-        guard let line = trackedLines()?.first else { return nil }
-        return Int32(line)
-    }
 
     /// PID-file lines: [pid, label?]. Nil if the file is absent.
     private static func trackedLines() -> [String]? {

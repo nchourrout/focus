@@ -28,14 +28,19 @@ struct PomodoroPlan: Equatable {
         block: Bool? = nil,
         music: String? = nil
     ) throws -> PomodoroPlan {
-        let preset = Defaults.pomodoroMusic
-        let target = (music?.isEmpty == false) ? music : (preset.isEmpty ? nil : preset)
+        // An override wins; otherwise fall through to the setting, and from
+        // there to whatever `Station.resolve` finds in the environment.
+        let station = if let music, !music.isEmpty {
+            try Station.resolve(target: music)
+        } else {
+            try Defaults.pomodoroStation ?? Station.resolve(target: nil)
+        }
         return PomodoroPlan(
             goal: goal,
             workMinutes: workMinutes ?? Defaults.workMinutes,
             breakMinutes: breakMinutes ?? Defaults.breakMinutes,
             block: block ?? Defaults.blockDuringPomodoro,
-            station: try Station.resolve(target: target)
+            station: station
         )
     }
 }

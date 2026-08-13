@@ -35,11 +35,6 @@ import Foundation
     // MARK: Resolve
 
     @Test func resolvePrecedence() throws {
-        // Explicit --uri wins over a preset name.
-        #expect(
-            try Station.resolve(target: "groovesalad", explicitURI: "https://example.com/x")
-            == .stream(URL(string: "https://example.com/x")!)
-        )
         // A preset name resolves to that preset.
         #expect(try Station.resolve(target: "dronezone") == .preset("dronezone"))
         // Stream URLs come through as streams.
@@ -57,10 +52,13 @@ import Foundation
             #expect(throws: Station.ResolveError.self) {
                 _ = try Station.resolve(target: unsafe)
             }
-            #expect(throws: Station.ResolveError.self) {
-                _ = try Station.resolve(target: nil, explicitURI: unsafe)
-            }
         }
+    }
+
+    @Test func streamURLIsNilForFiles() {
+        #expect(Station.preset("dronezone").streamURL?.scheme == "https")
+        #expect(Station.stream(URL(string: "http://radio.example/x")!).streamURL?.scheme == "http")
+        #expect(Station.file(URL(fileURLWithPath: "/tmp/song.mp3")).streamURL == nil)
     }
 
     // MARK: Reading

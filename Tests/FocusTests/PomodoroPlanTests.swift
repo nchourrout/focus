@@ -7,30 +7,30 @@ import Foundation
 @Suite(.serialized) struct PomodoroPlanTests {
 
     private func withSettings(
-        work: Int, breakMinutes: Int, block: Bool, music: String,
+        work: Int, breakMinutes: Int, block: Bool, station: Station?,
         _ body: () throws -> Void
     ) rethrows {
         let saved = (
             work: Defaults.workMinutes, breakMinutes: Defaults.breakMinutes,
-            block: Defaults.blockDuringPomodoro, music: Defaults.pomodoroMusic
+            block: Defaults.blockDuringPomodoro, station: Defaults.pomodoroStation
         )
         defer {
             Defaults.workMinutes = saved.work
             Defaults.breakMinutes = saved.breakMinutes
             Defaults.blockDuringPomodoro = saved.block
-            Defaults.pomodoroMusic = saved.music
+            Defaults.pomodoroStation = saved.station
         }
         Defaults.workMinutes = work
         Defaults.breakMinutes = breakMinutes
         Defaults.blockDuringPomodoro = block
-        Defaults.pomodoroMusic = music
+        Defaults.pomodoroStation = station
         try body()
     }
 
     @Test func settingsFillEveryGap() throws {
         // The bug this module exists to close: `focus pomodoro start` used to
         // apply a hardcoded 25/5 and ignore all of this.
-        try withSettings(work: 42, breakMinutes: 7, block: false, music: "cliqhop") {
+        try withSettings(work: 42, breakMinutes: 7, block: false, station: .preset("cliqhop")) {
             let plan = try PomodoroPlan.fromSettings(goal: "ship it")
             #expect(plan.goal == "ship it")
             #expect(plan.workMinutes == 42)
@@ -41,7 +41,7 @@ import Foundation
     }
 
     @Test func overridesWinOverSettings() throws {
-        try withSettings(work: 42, breakMinutes: 7, block: false, music: "cliqhop") {
+        try withSettings(work: 42, breakMinutes: 7, block: false, station: .preset("cliqhop")) {
             let plan = try PomodoroPlan.fromSettings(
                 goal: "ship it", workMinutes: 10, breakMinutes: 2,
                 block: true, music: "dronezone"
@@ -56,14 +56,14 @@ import Foundation
     @Test func emptyMusicSettingMeansSilence() throws {
         // With no preset set and no override, there's nothing to play unless the
         // environment names a stream.
-        try withSettings(work: 25, breakMinutes: 5, block: true, music: "") {
+        try withSettings(work: 25, breakMinutes: 5, block: true, station: nil) {
             let plan = try PomodoroPlan.fromSettings(goal: "quiet")
             #expect(plan.station == nil || ProcessInfo.processInfo.environment["FOCUS_MUSIC_URI"] != nil)
         }
     }
 
     @Test func unknownPresetOverrideThrows() throws {
-        try withSettings(work: 25, breakMinutes: 5, block: true, music: "") {
+        try withSettings(work: 25, breakMinutes: 5, block: true, station: nil) {
             #expect(throws: Station.ResolveError.self) {
                 _ = try PomodoroPlan.fromSettings(goal: "x", music: "bogus")
             }

@@ -49,12 +49,11 @@ final class AppState: ObservableObject {
         let snapshot = await Task.detached {
             (block: SiteBlock.default.isActive,
              state: PomodoroSession.default.current,
-             music: LocalPlayback.isPlaying,
-             nowPlaying: LocalPlayback.nowPlaying)
+             music: LocalPlayback.playing)
         }.value
         apply(
             blockActive: snapshot.block, state: snapshot.state,
-            musicPlaying: snapshot.music, musicNowPlaying: snapshot.nowPlaying
+            musicPlaying: snapshot.music.isPlaying, musicNowPlaying: snapshot.music.station
         )
     }
 

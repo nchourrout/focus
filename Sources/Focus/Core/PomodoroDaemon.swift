@@ -19,18 +19,13 @@ enum PomodoroDaemon {
             print("focus: clearing stale pomodoro state from previous session")
             // Use the prior session's block flag — if it was running with --no-block,
             // there's nothing to unblock.
-            LiveSessionEffects().endSession(unblock: existing.block, clearing: session)
+            SessionRunner.endSession(unblock: existing.block, clearing: session,
+                                     effects: LiveSessionEffects())
         }
 
         let now = Date().timeIntervalSince1970
-        let cadence = PomodoroCadence.fromSettings
-        // Session 1's break follows the same cadence as the rest: short unless the
-        // user set sessionsBeforeLongBreak to 1, in which case every break is long.
-        let firstLong = session.hasLongBreak(sessionNumber: 1, every: cadence.sessionsBeforeLongBreak)
-        let (workEnd, breakEnd) = session.deadlines(
-            workMinutes: plan.workMinutes,
-            breakMinutes: firstLong ? cadence.longBreakMinutes : plan.breakMinutes,
-            at: now
+        let first = session.firstSession(
+            plan: plan, cadence: .fromSettings, pid: 0, at: now
         )
 
         // Spawn the daemon first so we can write the state file once, with the real PID.
@@ -39,8 +34,8 @@ enum PomodoroDaemon {
         var args = [
             "_pomodoro-run",
             "--goal", plan.goal,
-            "--work-end", String(workEnd),
-            "--break-end", String(breakEnd),
+            "--work-end", String(first.workEnd),
+            "--break-end", String(first.breakEnd),
             "--work-minutes", String(plan.workMinutes),
             "--break-minutes", String(plan.breakMinutes),
         ]
@@ -50,12 +45,8 @@ enum PomodoroDaemon {
         if !plan.block { args.append("--no-block") }
         let handle = try Shell.spawn(Shell.Command(Paths.selfExecutable, args))
 
-        let active = PomodoroSession.Active(
-            goal: plan.goal, pid: handle.pid, startedAt: now,
-            workEnd: workEnd, breakEnd: breakEnd,
-            music: plan.station?.uri, block: plan.block,
-            sessionNumber: 1, isLongBreak: firstLong
-        )
+        var active = first
+        active.pid = handle.pid
         try session.save(active)
 
         print("focus: pomodoro started — \(plan.workMinutes)min work, \(plan.breakMinutes)min break — \(plan.goal)")
@@ -96,7 +87,8 @@ enum PomodoroDaemon {
             }
         }
         // Daemon doesn't clean up on SIGTERM (no handler), so do it here.
-        LiveSessionEffects().endSession(unblock: state.block, clearing: session)
+        SessionRunner.endSession(unblock: state.block, clearing: session,
+                                 effects: LiveSessionEffects())
         print("focus: pomodoro stopped")
     }
 }

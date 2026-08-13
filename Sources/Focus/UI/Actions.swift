@@ -111,12 +111,12 @@ enum Actions {
         LocalPlayback.stop()
     }
 
-    /// Apply a music-preset change while audio is already playing: switch the
-    /// stream to the new preset, or stop if the user picked "None". No-op when
-    /// nothing is playing — the new preset takes effect at the next pomodoro start.
-    static func reapplyMusic(_ preset: String) {
+    /// Apply a music change while audio is already playing: switch the stream, or
+    /// stop if the user picked "None". No-op when nothing is playing — the new
+    /// station takes effect at the next pomodoro start.
+    static func reapplyMusic(_ station: Station?) {
         guard LocalPlayback.isPlaying else { return }
-        if let station = Station(preset: preset) {
+        if let station {
             playMusic(station)
         } else {
             stopMusic()

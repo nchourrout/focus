@@ -48,8 +48,19 @@ struct Music: ParsableCommand {
             return
         }
 
-        guard let station = try Station.resolve(target: target, explicitURI: uri) else {
-            throw CLIError.missingMusicSource
+        // An explicit --uri is already a URL, so it skips the resolver's
+        // preset-name-or-environment precedence and goes straight to a Station.
+        let station: Station
+        if let uri, !uri.isEmpty {
+            guard let explicit = Station(uri: uri) else {
+                throw Station.ResolveError.notAStream(uri)
+            }
+            station = explicit
+        } else {
+            guard let resolved = try Station.resolve(target: target) else {
+                throw CLIError.missingMusicSource
+            }
+            station = resolved
         }
         try LocalPlayback.play(station)
         print("focus: streaming \(station.uri)")

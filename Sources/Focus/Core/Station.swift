@@ -13,7 +13,7 @@ import Foundation
 /// `uri` is what the pomodoro state file and `--music` argv carry (a resolved
 /// stream URL, wire-compatible with the previous Python tool), and `label` is
 /// what the music PID file carries.
-enum Station: Equatable {
+enum Station: Equatable, Hashable {
     /// A name from `MusicPresets.list`. Only built for names known to the catalogue.
     case preset(String)
     /// An http(s) stream that isn't one of the presets.
@@ -42,16 +42,13 @@ enum Station: Equatable {
         self = .stream(url)
     }
 
-    /// Precedence: explicit URI > target (preset name or http(s) URL) > the
+    /// Precedence: `target` (a preset name or an http(s) URL) > the
     /// `FOCUS_MUSIC_URI` environment variable. Returns nil when nothing is
     /// configured; throws when `target` looks like a preset name but isn't one.
-    static func resolve(target: String?, explicitURI: String? = nil) throws -> Station? {
-        if let explicitURI, !explicitURI.isEmpty {
-            guard let station = Station(uri: explicitURI) else {
-                throw ResolveError.notAStream(explicitURI)
-            }
-            return station
-        }
+    ///
+    /// A caller that already holds an explicit URL (`focus music --uri`) builds
+    /// the Station itself rather than passing it through here.
+    static func resolve(target: String?) throws -> Station? {
         if let target, !target.isEmpty {
             if let station = Station(preset: target) { return station }
             guard let station = Station(uri: target) else {
@@ -67,6 +64,9 @@ enum Station: Equatable {
         return station
     }
 
+    /// Every preset as a Station, for views that render the catalogue.
+    static var presets: [Station] { MusicPresets.names.map { .preset($0) } }
+
     // MARK: Reading
 
     /// The stream URL, or the file path. What `--music` argv and the pomodoro
@@ -77,6 +77,13 @@ enum Station: Equatable {
         case .stream(let url): return url.absoluteString
         case .file(let url): return url.path
         }
+    }
+
+    /// The URL to hand AVPlayer, or nil for a local file (which goes to afplay).
+    /// Always http(s): a Station can't be built from any other scheme.
+    var streamURL: URL? {
+        if case .file = self { return nil }
+        return URL(string: uri)
     }
 
     /// Preset name when this is one of the catalogue's stations, else nil.
@@ -101,28 +108,15 @@ enum Station: Equatable {
     /// The music PID file's second line. Same shape it has always had (preset
     /// name, stream URL, or file path), so a PID file written by an older build
     /// still reads back correctly.
-    var label: String {
-        switch self {
-        case .preset(let name): return name
-        case .stream(let url): return url.absoluteString
-        case .file(let url): return url.path
-        }
-    }
+    var label: String { presetName ?? uri }
 
     /// Parse a music PID file label. Older builds wrote a file's basename rather
     /// than its full path; that still reads back as `.file`, and `displayName` is
     /// the basename either way.
     init?(label: String) {
         guard !label.isEmpty else { return nil }
-        if let station = Station(preset: label) {
-            self = station
-            return
-        }
-        if let url = Self.httpURL(label) {
-            self = .stream(url)
-            return
-        }
-        self = .file(URL(fileURLWithPath: label))
+        // A preset's label is its name, never its URL, so try that spelling first.
+        self = Station(preset: label) ?? Station(uri: label) ?? .file(URL(fileURLWithPath: label))
     }
 
     // MARK: Private

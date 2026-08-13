@@ -39,9 +39,12 @@ private final class FakeEffects: SessionEffects {
     func startMusic(_ station: Station) { events.append(.startMusic(station)) }
     func stopMusic() { events.append(.stopMusic) }
 
-    var sleeps: Int { events.filter { if case .slept = $0 { return true } else { return false } }.count }
     var sleepDeadlines: [TimeInterval] {
         events.compactMap { if case .slept(let d) = $0 { return d } else { return nil } }
+    }
+    var sleeps: Int { sleepDeadlines.count }
+    var musicStarts: Int {
+        events.filter { if case .startMusic = $0 { return true } else { return false } }.count
     }
 }
 
@@ -128,7 +131,7 @@ private final class FakeEffects: SessionEffects {
 
         run(plan: makePlan(station: nil), session: session, effects: effects)
 
-        #expect(!effects.events.contains { if case .startMusic = $0 { return true } else { return false } })
+        #expect(effects.musicStarts == 0)
         // Teardown still stops playback: something else may have started it.
         #expect(effects.events.contains(.stopMusic))
     }
@@ -159,10 +162,7 @@ private final class FakeEffects: SessionEffects {
         // Block lifted for each break, reapplied for each work phase.
         #expect(effects.events.filter { $0 == .applyBlock }.count == 2)
         #expect(effects.events.contains(.startMusic(.preset("dronezone"))))
-        #expect(
-            effects.events.filter { if case .startMusic = $0 { return true } else { return false } }.count == 1,
-            "music carries over rather than restarting each session"
-        )
+        #expect(effects.musicStarts == 1, "music carries over rather than restarting each session")
     }
 
     @Test func longBreakLandsOnEveryNthSession() throws {

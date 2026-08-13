@@ -110,19 +110,15 @@ enum Defaults {
         set { UserDefaults.standard.set(newValue, forKey: phaseSoundsKey) }
     }
 
-    private static let pomodoroMusicKey = "pomodoroMusic"
+    private static let pomodoroStationKey = "pomodoroMusic"
 
-    /// Preset name (see `MusicPresets`) to auto-start when a pomodoro begins.
-    /// Empty string means no music auto-start. Stored values that aren't a
-    /// known preset (a stale name from an older release, or a URL set via
-    /// `defaults write`) read back as "" so the Settings Picker doesn't show
-    /// a blank selection. URL-based music is still reachable through the CLI's
-    /// `focus pomodoro start --music https://...`, which bypasses this default.
-    static var pomodoroMusic: String {
-        get {
-            let raw = UserDefaults.standard.string(forKey: pomodoroMusicKey) ?? ""
-            return MusicPresets.names.contains(raw) ? raw : ""
-        }
-        set { UserDefaults.standard.set(newValue, forKey: pomodoroMusicKey) }
+    /// Which `Station` to auto-start when a pomodoro begins, or nil for silence.
+    /// Stored as a preset name, so a stale name from an older release (or a URL
+    /// written by hand with `defaults write`) reads back as nil rather than
+    /// showing a blank selection in Settings. URL-based music is still reachable
+    /// through `focus pomodoro start --music https://…`, which overrides this.
+    static var pomodoroStation: Station? {
+        get { Station(preset: UserDefaults.standard.string(forKey: pomodoroStationKey) ?? "") }
+        set { UserDefaults.standard.set(newValue?.presetName ?? "", forKey: pomodoroStationKey) }
     }
 }
