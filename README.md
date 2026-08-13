@@ -30,6 +30,8 @@ The app is unsigned and unnotarized, so Gatekeeper blocks the first launch until
 
 Requires macOS 13+ and Swift 5.10+. Xcode Command Line Tools are enough to build; `swift test` needs a full Xcode.
 
+> KeyboardShortcuts is pinned to 1.15.0 to keep that true. 1.16.0+ use the `#Preview` macro and 3.x also uses SwiftUI's `@Entry`; both need macro plugins that only ship with the full Xcode.
+
 ```bash
 git clone git@github.com:nchourrout/focus.git ~/dev/focus
 cd ~/dev/focus
@@ -51,11 +53,11 @@ Click the icon for a dropdown:
 - **stopwatch icon** during work, **coffee cup** during the break, with a live `mm:ss` countdown next to it. Idle shows a dashed circle (or a slashed circle when the block is on)
 - **Start pomodoro…** — prompts for a goal; replaced by **Stop pomodoro** while running
 - **Block / Unblock websites** — toggles `/etc/hosts` (uses the sudoers drop-in)
-- **Music** submenu — any preset, or Stop
+- **Music** submenu — any preset, or Stop. The current station is named in the submenu title and check-marked in the list
 - **Settings…** — tabbed window: General (work/break/long-break durations, session-cycling, stop-after-set, launch at login, sounds, music preset), Shortcuts (global hotkey recorders), Block list (the sites edited inline)
 - **Quit Focus**
 
-Menu actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.json` stays the single source of truth. The menu bar polls it once a second.
+Menu actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.json` stays the single source of truth. The menu bar polls it once a second. It passes no flags when starting a pomodoro: the CLI reads the same Settings it would, so there's only one place the rules live.
 
 ## CLI
 
@@ -75,22 +77,29 @@ focus music https://stream.url   # any HTTP(S) audio stream
 focus music --file ~/brown.mp3 --loop
 focus music --stop
 
-focus pomodoro start "write spec"                 # 25min work, 5min break, cycles until stopped
+focus pomodoro start "write spec"                 # uses your Settings, cycles until stopped
 focus pomodoro start "deep work" --work 50 --break 10 --music groovesalad
+focus pomodoro start "quiet hour" --no-block      # skip the site block for one run
 focus pomodoro status                             # add --json for machine-readable
 focus pomodoro stop
 
+# Every flag is an override. Omit one and the session uses your Settings value
+# (25min work / 5min break out of the box), so the CLI and the menu bar start
+# identical sessions.
+#
 # Session cycling and the long break (every 4th break, 15min by default) are
 # configured in Settings → General. Turn cycling off there for one-and-done runs,
 # or enable "Stop after each set" to pause at every 4th session. A notification
 # then lets you start another set with the same goal, or type a new goal inline.
+# Those settings are re-read at each phase boundary, so changing one mid-run
+# takes effect at the next work/break transition rather than the next run.
 ```
 
 **Music sources**:
 - **HTTP(S) streams** — built-in SomaFM presets, or any direct stream URL. Played via `AVPlayer` in a detached subprocess.
 - **Local audio files** — `--file PATH`, with optional `--loop`. Played via `afplay`.
 
-Set `FOCUS_MUSIC_URI` in your shell to a default URL for `focus music` with no args.
+A pomodoro picks its music in this order: the `--music` flag, then the **Start music with pomodoro** preset in Settings, then `FOCUS_MUSIC_URI`. Set `FOCUS_MUSIC_URI` in your shell to give `focus music` with no args a default too.
 
 ## Sudoers (system permission)
 
@@ -108,7 +117,7 @@ The generated rule whitelists `block`, `unblock`, and `toggle` against the Focus
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
 - `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete)
-- `~/.focus-music.pid` — afplay PID for `--stop`
+- `~/.focus-music.pid` — playback PID and the station label (`pid\nlabel`), so `--stop` can reach it and the menu bar can name what's playing
 
 ## Testing
 
