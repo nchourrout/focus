@@ -1,13 +1,13 @@
 {
-  "originHash" : "a1fa2f2b7f2e81e9cb01cb87ac73cdcd35513019776b1a1c6d34a355fa3fa10c",
+  "originHash" : "ecb7f3d93222b9f842138b61ae004fbb78ef562a7eec491e424effed86923bae",
   "pins" : [
     {
       "identity" : "keyboardshortcuts",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sindresorhus/KeyboardShortcuts",
       "state" : {
-        "revision" : "43bedc929042742384e5a87b576c17de5394bd7e",
-        "version" : "1.14.0"
+        "revision" : "ac302e21da5883f4bd0490cbd0cb710b08740500",
+        "version" : "1.15.0"
       }
     },
     {
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser",
       "state" : {
-        "revision" : "626b5b7b2f45e1b0b1c6f4a309296d1d21d7311b",
-        "version" : "1.7.1"
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
       }
     }
   ],
