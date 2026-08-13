@@ -20,7 +20,7 @@ struct SettingsContent: View {
         // — the one control a user goes looking for when blocking isn't working.
         // The Form still scrolls on its own at large accessibility text sizes,
         // and on the Block list tab.
-        .frame(width: 500, height: 800)
+        .frame(width: 500, height: 832)
     }
 }
 
