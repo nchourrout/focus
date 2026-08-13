@@ -13,10 +13,14 @@ struct SettingsContent: View {
             BlockListTab()
                 .tabItem { Label("Block list", systemImage: "nosign") }
         }
-        // Sized to fit the General tab's content (its tallest). The grouped Form
-        // scrolls on its own when the content doesn't fit — at large accessibility
-        // text sizes, or on the Block list tab.
-        .frame(width: 500, height: 620)
+        // Sized to fit the General tab's content, which is the tallest. Grouped
+        // Form rows are roomier than the hand-spaced VStack this replaced, so the
+        // window is taller than it looks like it needs to be: at 620 the System
+        // section fell below the fold, which hides the "Grant permission" button
+        // — the one control a user goes looking for when blocking isn't working.
+        // The Form still scrolls on its own at large accessibility text sizes,
+        // and on the Block list tab.
+        .frame(width: 500, height: 800)
     }
 }
 
