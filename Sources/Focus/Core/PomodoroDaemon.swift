@@ -56,12 +56,15 @@ enum PomodoroDaemon {
     /// process, then hands off to `SessionRunner` for the loop itself.
     ///
     /// - We ignore SIGHUP and setsid() ourselves so we survive the parent shell exiting.
-    /// - We do NOT install a SIGTERM handler. Default behavior is to terminate, which
-    ///   means cleanup on interruption is the responsibility of `stop()`'s fallback
-    ///   path. Normal completion cleans up inside the runner.
+    /// - SIGTERM/SIGINT tear the world down through `signalCleanup` rather than
+    ///   killing the process raw: with the default disposition, any termination
+    ///   outside `pomodoro stop` (a stray kill, an IDE stopping a foreground
+    ///   debug run) left the block applied and playback running until the next
+    ///   app launch happened to recover it.
     static func runDaemon(_ plan: PomodoroPlan, workEnd: Double, breakEnd: Double) {
         signal(SIGHUP, SIG_IGN)
         _ = Darwin.setsid()
+        installSignalCleanup(plan: plan)
 
         // First line of the run: from here on the log is the only way to see what
         // this process did, since its stdio is /dev/null.
@@ -96,10 +99,46 @@ enum PomodoroDaemon {
                 if !isPIDAlive(state.pid) { break }
             }
         }
-        // Daemon doesn't clean up on SIGTERM (no handler), so do it here.
+        // The daemon now cleans up on SIGTERM itself; this is still the fallback
+        // for a daemon that ignored or lost the race, and it's what clears the
+        // state when the pid was recycled. Idempotent against signalCleanup.
         SessionRunner.endSession(unblock: state.block, clearing: session,
                                  effects: LiveSessionEffects())
         print("focus: pomodoro stopped")
+    }
+
+    // MARK: Signal teardown
+
+    /// Keeps the signal sources alive for the daemon's lifetime — a released
+    /// source stops delivering, and with the default disposition re-ignored we'd
+    /// never clean up at all.
+    private static var signalSources: [DispatchSourceSignal] = []
+
+    private static func installSignalCleanup(plan: PomodoroPlan) {
+        // Take over disposition before resuming the sources, or a signal landing
+        // in between would kill us with the default handler.
+        signal(SIGTERM, SIG_IGN)
+        signal(SIGINT, SIG_IGN)
+        let queue = DispatchQueue(label: "focus.daemon.signal")
+        for sig in [SIGTERM, SIGINT] {
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
+            source.setEventHandler { signalCleanup(plan: plan) }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
+
+    /// Runs on the signal queue, while the runner thread may be parked in its
+    /// next sleep. Both paths are idempotent (unblock is a no-op on a clean
+    /// hosts file, stopMusic kills nothing twice), so racing the runner's own
+    /// teardown is harmless; `exit` ends whichever loses.
+    private static func signalCleanup(plan: PomodoroPlan) {
+        Log.daemon.notice("terminating on signal; cleaning up")
+        SessionRunner.endSession(
+            unblock: plan.block, clearing: PomodoroSession.default,
+            effects: LiveSessionEffects()
+        )
+        exit(0)
     }
 }
 
