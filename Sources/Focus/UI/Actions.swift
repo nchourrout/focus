@@ -67,7 +67,19 @@ enum Actions {
                     Task { @MainActor in showSudoersMissingAlert() }
                     return
                 }
-                let active = stdout.contains("\"active\": true")
+                // Decode the documented payload rather than substring-matching
+                // it. On the (bug-shaped) failure path, skip the banner: the
+                // AppState tick reflects the real /etc/hosts state within 1s.
+                let active: Bool
+                do {
+                    active = try JSONDecoder()
+                        .decode(BlockStatus.self, from: Data(stdout.utf8)).active
+                } catch {
+                    Log.actions.error(
+                        "toggle --json output didn't decode as BlockStatus: \(stdout, privacy: .public)"
+                    )
+                    return
+                }
                 Task { @MainActor in
                     LocalNotifications.post(
                         title: active ? "Websites blocked" : "Websites unblocked",
