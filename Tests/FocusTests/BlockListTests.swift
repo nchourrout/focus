@@ -42,8 +42,28 @@ import Foundation
         try "good.com\n127.0.0.1 evil.com\n".write(to: tmp, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        #expect(throws: BlockList.InvalidEntry.self) {
+        #expect(throws: BlockList.InvalidEntries.self) {
             _ = try BlockList.load(from: tmp)
+        }
+    }
+
+    /// Fail-fast used to surface one bad line per attempt; now every rejected
+    /// line lands in the single error so the Settings editor lists them all.
+    @Test func loadReportsAllInvalidLinesAtOnce() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".txt")
+        try "good.com\nbad one\nalso bad\nwww.fine.org\n"
+            .write(to: tmp, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        do {
+            _ = try BlockList.load(from: tmp)
+            Issue.record("expected InvalidEntries")
+        } catch let error as BlockList.InvalidEntries {
+            #expect(error.entries.count == 2)
+            #expect(error.entries.map(\.line) == [2, 3])
+            #expect(error.localizedDescription.contains("bad one"))
+            #expect(error.localizedDescription.contains("also bad"))
         }
     }
 
@@ -66,7 +86,7 @@ import Foundation
         try "good.com\r\n127.0.0.1 evil.com\r\n".write(to: tmp, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        #expect(throws: BlockList.InvalidEntry.self) {
+        #expect(throws: BlockList.InvalidEntries.self) {
             _ = try BlockList.load(from: tmp)
         }
     }
