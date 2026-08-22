@@ -69,6 +69,7 @@ focus pomodoro start "write spec"                 # uses your Settings, cycles u
 focus pomodoro start "deep work" --work 50 --break 10 --music groovesalad
 focus pomodoro start "quiet hour" --no-block
 focus pomodoro status                             # add --json
+focus pomodoro skip-break                         # end the current break early
 focus pomodoro stop
 ```
 
@@ -86,7 +87,7 @@ The rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binar
 
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
-- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete)
+- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete, work_minutes, break_minutes)
 - `~/.focus-music.pid` — playback PID and station label (`pid\nlabel`), so `--stop` can reach it and the menu bar can name what's playing
 
 ## Logs

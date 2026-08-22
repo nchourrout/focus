@@ -68,6 +68,9 @@ struct MenuContent: View {
             // No live countdown here — the menu bar label has it, and re-rendering
             // a menu item every second would reset AppKit's hover selection.
             Text(state.phase == .break ? (p.isLongBreak ? "Long break" : "Break") : p.goal)
+            if state.phase == .break {
+                Button("Skip break") { Actions.skipBreak() }
+            }
             Button("Stop pomodoro") { Actions.stopPomodoro() }
         }
     }

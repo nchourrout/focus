@@ -42,6 +42,14 @@ struct PomodoroSession {
         /// then clears the file. Always false on a live session. Files predating
         /// this field decode as false.
         var setComplete: Bool
+        /// Work/break minutes of the plan this run launched with, so commands
+        /// acting mid-run (`pomodoro skip-break`) rebuild deadlines faithfully
+        /// even when Settings changed since launch — durations are fixed for
+        /// the duration of one run (see `PomodoroPlan`). Files predating these
+        /// fields decode as nil; callers fall back to current Settings, which
+        /// reproduces the pre-schema behaviour.
+        var workMinutes: Int?
+        var breakMinutes: Int?
 
         enum CodingKeys: String, CodingKey {
             case goal, pid, music, block
@@ -51,13 +59,16 @@ struct PomodoroSession {
             case sessionNumber = "session_number"
             case isLongBreak = "is_long_break"
             case setComplete = "set_complete"
+            case workMinutes = "work_minutes"
+            case breakMinutes = "break_minutes"
         }
 
         init(goal: String, pid: Int32, startedAt: TimeInterval,
              workEnd: TimeInterval, breakEnd: TimeInterval,
              music: String?, block: Bool,
              sessionNumber: Int = 1, isLongBreak: Bool = false,
-             setComplete: Bool = false) {
+             setComplete: Bool = false,
+             workMinutes: Int? = nil, breakMinutes: Int? = nil) {
             self.goal = goal
             self.pid = pid
             self.startedAt = startedAt
@@ -68,6 +79,8 @@ struct PomodoroSession {
             self.sessionNumber = sessionNumber
             self.isLongBreak = isLongBreak
             self.setComplete = setComplete
+            self.workMinutes = workMinutes
+            self.breakMinutes = breakMinutes
         }
 
         init(from decoder: Decoder) throws {
@@ -83,6 +96,8 @@ struct PomodoroSession {
             sessionNumber = try c.decodeIfPresent(Int.self, forKey: .sessionNumber) ?? 1
             isLongBreak = try c.decodeIfPresent(Bool.self, forKey: .isLongBreak) ?? false
             setComplete = try c.decodeIfPresent(Bool.self, forKey: .setComplete) ?? false
+            workMinutes = try c.decodeIfPresent(Int.self, forKey: .workMinutes)
+            breakMinutes = try c.decodeIfPresent(Int.self, forKey: .breakMinutes)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -97,6 +112,8 @@ struct PomodoroSession {
             try c.encode(sessionNumber, forKey: .sessionNumber)
             try c.encode(isLongBreak, forKey: .isLongBreak)
             try c.encode(setComplete, forKey: .setComplete)
+            try c.encodeIfPresent(workMinutes, forKey: .workMinutes)
+            try c.encodeIfPresent(breakMinutes, forKey: .breakMinutes)
         }
     }
 
@@ -166,7 +183,8 @@ struct PomodoroSession {
             goal: plan.goal, pid: pid, startedAt: start,
             workEnd: workEnd, breakEnd: breakEnd,
             music: plan.station?.uri, block: plan.block,
-            sessionNumber: 1, isLongBreak: long
+            sessionNumber: 1, isLongBreak: long,
+            workMinutes: plan.workMinutes, breakMinutes: plan.breakMinutes
         )
     }
 
@@ -187,7 +205,8 @@ struct PomodoroSession {
             goal: prev.goal, pid: prev.pid, startedAt: start,
             workEnd: workEnd, breakEnd: breakEnd,
             music: prev.music, block: prev.block,
-            sessionNumber: sessionNumber, isLongBreak: long
+            sessionNumber: sessionNumber, isLongBreak: long,
+            workMinutes: workMinutes, breakMinutes: breakMinutes
         )
     }
 
@@ -204,7 +223,8 @@ struct PomodoroSession {
             // No break follows a set-complete marker, so isLongBreak is moot — keep
             // it false rather than carrying a flag for a break that never happens.
             sessionNumber: prev.sessionNumber, isLongBreak: false,
-            setComplete: true
+            setComplete: true,
+            workMinutes: prev.workMinutes, breakMinutes: prev.breakMinutes
         )
     }
 }

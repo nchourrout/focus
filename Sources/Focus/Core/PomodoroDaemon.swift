@@ -27,29 +27,85 @@ enum PomodoroDaemon {
         let first = session.firstSession(
             plan: plan, cadence: .fromSettings, pid: 0, at: now
         )
-
-        // Spawn the daemon first so we can write the state file once, with the real PID.
-        // Writing a placeholder state beforehand opened a window where `pomodoro stop`
-        // could see pid=0, skip the signal, and leak the daemon.
-        var args = [
-            "_pomodoro-run",
-            "--goal", plan.goal,
-            "--work-end", String(first.workEnd),
-            "--break-end", String(first.breakEnd),
-            "--work-minutes", String(plan.workMinutes),
-            "--break-minutes", String(plan.breakMinutes),
-        ]
-        if let station = plan.station {
-            args.append(contentsOf: ["--music", station.uri])
-        }
-        if !plan.block { args.append("--no-block") }
-        let handle = try Shell.spawn(Shell.Command(Paths.selfExecutable, args))
-
-        var active = first
-        active.pid = handle.pid
-        try session.save(active)
+        try spawn(active: first, workMinutes: plan.workMinutes, breakMinutes: plan.breakMinutes)
 
         print("focus: pomodoro started — \(plan.workMinutes)min work, \(plan.breakMinutes)min break — \(plan.goal)")
+    }
+
+    /// End the running break early and start the next work phase now.
+    ///
+    /// The replacement daemon replays the run's stored plan minutes rather
+    /// than re-reading Settings: work/break lengths are fixed for the duration
+    /// of one run (see `PomodoroPlan`). Only the cadence is read fresh,
+    /// matching how every other phase boundary behaves.
+    static func skipBreak() throws {
+        let session = PomodoroSession.default
+        guard let current = session.current,
+              !SessionStaleness.isStale(current, liveness: { isOurProcess(pid: $0, expectedStart: $1) })
+        else {
+            print("focus: no pomodoro running")
+            return
+        }
+        guard session.phase(of: current).phase == .break else {
+            print("focus: not in a break — skip only works while resting")
+            return
+        }
+        // Stored plan minutes; nil on files predating the field, falling back
+        // to current Settings exactly as pre-schema runs would have.
+        let workMinutes = current.workMinutes ?? Defaults.workMinutes
+        let breakMinutes = current.breakMinutes ?? Defaults.breakMinutes
+        let cadence = PomodoroCadence.fromSettings
+        let next = session.nextSession(
+            after: current,
+            workMinutes: workMinutes, breakMinutes: breakMinutes,
+            longBreakMinutes: cadence.longBreakMinutes,
+            sessionsBeforeLongBreak: cadence.sessionsBeforeLongBreak,
+            at: Date().timeIntervalSince1970
+        )
+
+        // Stop the old daemon. Its SIGTERM handler tears down the block (a
+        // no-op mid-break) and playback; the replacement restarts the same
+        // station, so skipping costs one short stream gap.
+        if current.pid > 0, isOurProcess(pid: current.pid, expectedStart: current.startedAt) {
+            _ = kill(current.pid, SIGTERM)
+            for _ in 0..<10 {
+                usleep(100_000)
+                if !isPIDAlive(current.pid) { break }
+            }
+        }
+        // Belt for a daemon that lost the signal race (same as stop()).
+        SessionRunner.endSession(unblock: current.block, clearing: session,
+                                 effects: LiveSessionEffects())
+        try spawn(active: next, workMinutes: workMinutes, breakMinutes: breakMinutes)
+        print("focus: break skipped — starting session \(next.sessionNumber)")
+    }
+
+    /// Fork the detached `_pomodoro-run` child for `active` and write the state
+    /// file once, with the real PID. Spawn-before-save ordering matters:
+    /// writing a placeholder state beforehand opened a window where
+    /// `pomodoro stop` could see pid=0, skip the signal, and leak the daemon.
+    /// Shared by launch and skipBreak.
+    @discardableResult
+    private static func spawn(active: PomodoroSession.Active,
+                              workMinutes: Int, breakMinutes: Int) throws -> Int32 {
+        var args = [
+            "_pomodoro-run",
+            "--goal", active.goal,
+            "--work-end", String(active.workEnd),
+            "--break-end", String(active.breakEnd),
+            "--work-minutes", String(workMinutes),
+            "--break-minutes", String(breakMinutes),
+        ]
+        if let uri = active.music {
+            args.append(contentsOf: ["--music", uri])
+        }
+        if !active.block { args.append("--no-block") }
+        let handle = try Shell.spawn(Shell.Command(Paths.selfExecutable, args))
+
+        var started = active
+        started.pid = handle.pid
+        try PomodoroSession.default.save(started)
+        return handle.pid
     }
 
     /// Body of the hidden `_pomodoro-run` subcommand. Runs in the detached child

@@ -38,6 +38,13 @@ enum Actions {
         spawn(["pomodoro", "stop"])
     }
 
+    /// End the running break early; the next work phase starts immediately.
+    /// No-op with a friendly message unless a session is resting in a break —
+    /// the CLI owns those guards, so the menu item can fire freely.
+    static func skipBreak() {
+        spawn(["pomodoro", "skip-break"])
+    }
+
     /// Single-shortcut affordance: stop if a session is running, otherwise prompt
     /// for a goal and start one.
     static func togglePomodoro() {

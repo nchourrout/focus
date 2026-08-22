@@ -5,7 +5,7 @@ struct Pomodoro: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "pomodoro",
         abstract: "run a pomodoro session with block + music",
-        subcommands: [Start.self, Stop.self, PomodoroStatus.self]
+        subcommands: [Start.self, SkipBreak.self, Stop.self, PomodoroStatus.self]
     )
 }
 
@@ -66,6 +66,17 @@ extension Pomodoro {
 
         func run() {
             PomodoroDaemon.stop()
+        }
+    }
+
+    struct SkipBreak: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "skip-break",
+            abstract: "end the current break early and start the next work phase"
+        )
+
+        func run() throws {
+            try PomodoroDaemon.skipBreak()
         }
     }
 
