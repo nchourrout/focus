@@ -85,7 +85,6 @@ extension Pomodoro {
             commandName: "status",
             abstract: "show current pomodoro state"
         )
-
         @Flag(name: .customLong("json"), help: "Machine-readable output.")
         var json: Bool = false
 

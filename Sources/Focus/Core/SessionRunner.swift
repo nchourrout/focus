@@ -29,6 +29,11 @@ struct SessionRunner {
     let plan: PomodoroPlan
     let session: PomodoroSession
     let effects: SessionEffects
+    /// Non-nil in the daemon, where finished work phases land in the history
+    /// log; nil elsewhere (tests, teardown-only construction). Kept optional
+    /// so the log stays a daemon concern rather than an effect every caller
+    /// must fake.
+    var history: SessionHistory?
 
     /// Tear down everything a run leaves behind. `unblock` is false for a session
     /// that never blocked, which spares a `sudo -n` call (and the matching prompt
@@ -40,6 +45,28 @@ struct SessionRunner {
         if unblock { effects.removeBlock() }
         effects.stopMusic()
         session.clear()
+    }
+
+    /// Append a `completed: false` history line when a run is torn down in the
+    /// middle of a work phase (`pomodoro stop`, SIGTERM). Call before
+    /// `endSession` — the state file is the source being read. Breaks and
+    /// set-complete markers never get partials: their work phase already
+    /// earned its line at the boundary. The dedupe check covers the race where
+    /// the runner recorded the completion just before we tore down.
+    /// Stale-file recovery skips this entirely: a crashed daemon's elapsed
+    /// time is unknowable, so no fabricated entry.
+    static func recordPartialIfNeeded(clearing session: PomodoroSession, now: TimeInterval) {
+        guard let active = session.current else { return }
+        guard session.phase(of: active, at: now).phase == .work else { return }
+        let history = SessionHistory.default
+        guard !history.isAlreadyRecorded(startedAt: active.startedAt, goal: active.goal) else { return }
+        history.append(SessionHistory.Entry(
+            goal: active.goal,
+            startedAt: active.startedAt,
+            endedAt: min(now, active.workEnd),
+            longBreak: active.isLongBreak,
+            completed: false
+        ))
     }
 
     /// Write state, and say so when it doesn't take. A failed save leaves the
@@ -76,6 +103,19 @@ struct SessionRunner {
 
         while true {
             effects.sleep(until: currentWorkEnd)
+
+            // One history line per finished work phase. `session.current`
+            // still holds this phase's record until the loop rolls the next
+            // one, so its startedAt/workEnd bracket exactly what was worked.
+            if let history, let cur = session.current {
+                history.append(SessionHistory.Entry(
+                    goal: cur.goal,
+                    startedAt: cur.startedAt,
+                    endedAt: min(effects.now, cur.workEnd),
+                    longBreak: cur.isLongBreak,
+                    completed: true
+                ))
+            }
 
             // Stop-after-set: when cycling is on and the user opted to stop at
             // each set boundary (every Nth session — the same cadence that earns

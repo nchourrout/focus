@@ -4,6 +4,9 @@ import AppKit
 struct MenuContent: View {
     @ObservedObject var state: AppState
     @Environment(\.openWindow) private var openWindow
+    /// Today's focused minutes, read once per menu open (onAppear). Kept out of
+    /// AppState so the 1 Hz tick never touches the history file.
+    @State private var todaysFocus: SessionHistory.Totals?
 
     var body: some View {
         // Note: no `keyboardShortcut(...)` on the action buttons — those would
@@ -43,6 +46,13 @@ struct MenuContent: View {
 
         Divider()
 
+        if let focus = todaysFocus, focus.minutes > 0 {
+            Text("Today: \(focus.describe()) across \(focus.sessions) sessions")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Divider()
+        }
+
         // The standard Settings scene doesn't show its window for LSUIElement
         // menu bar apps. We use a regular Window scene (id: "settings") and
         // open it via the SwiftUI environment action.
@@ -51,6 +61,12 @@ struct MenuContent: View {
             openWindow(id: "settings")
         }
         .keyboardShortcut(",")
+        .onAppear {
+            let dayStart = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
+            todaysFocus = SessionHistory.totals(
+                since: dayStart, in: SessionHistory.default.entries()
+            )
+        }
 
         Button("Quit Focus") { NSApp.terminate(nil) }
             .keyboardShortcut("q")

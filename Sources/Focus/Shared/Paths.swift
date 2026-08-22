@@ -34,6 +34,14 @@ enum Paths {
             .appendingPathComponent("Library/Application Support/Focus/block.txt")
     }
 
+    /// Append-only log of finished work sessions, next to block.txt so both
+    /// live under the same Application Support directory.
+    static var history: URL {
+        let home = NSHomeDirectoryForUser(NSUserName()) ?? NSHomeDirectory()
+        return URL(fileURLWithPath: home)
+            .appendingPathComponent("Library/Application Support/Focus/history.jsonl")
+    }
+
     /// Absolute path to the running executable, used to re-invoke ourselves.
     ///
     /// Symlinks are resolved because the sudoers drop-in whitelists the binary

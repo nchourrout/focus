@@ -135,7 +135,8 @@ enum PomodoroDaemon {
         SessionRunner(
             plan: plan,
             session: .default,
-            effects: LiveSessionEffects()
+            effects: LiveSessionEffects(),
+            history: .default
         ).run(workEnd: workEnd, breakEnd: breakEnd)
     }
 
@@ -158,6 +159,7 @@ enum PomodoroDaemon {
         // The daemon now cleans up on SIGTERM itself; this is still the fallback
         // for a daemon that ignored or lost the race, and it's what clears the
         // state when the pid was recycled. Idempotent against signalCleanup.
+        SessionRunner.recordPartialIfNeeded(clearing: session, now: Date().timeIntervalSince1970)
         SessionRunner.endSession(unblock: state.block, clearing: session,
                                  effects: LiveSessionEffects())
         print("focus: pomodoro stopped")
@@ -190,8 +192,10 @@ enum PomodoroDaemon {
     /// teardown is harmless; `exit` ends whichever loses.
     private static func signalCleanup(plan: PomodoroPlan) {
         Log.daemon.notice("terminating on signal; cleaning up")
+        let session = PomodoroSession.default
+        SessionRunner.recordPartialIfNeeded(clearing: session, now: Date().timeIntervalSince1970)
         SessionRunner.endSession(
-            unblock: plan.block, clearing: PomodoroSession.default,
+            unblock: plan.block, clearing: session,
             effects: LiveSessionEffects()
         )
         exit(0)

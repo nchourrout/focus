@@ -71,6 +71,8 @@ focus pomodoro start "quiet hour" --no-block
 focus pomodoro status                             # add --json
 focus pomodoro skip-break                         # end the current break early
 focus pomodoro stop
+
+focus stats                                       # today + last 7 days; --days N widens the window
 ```
 
 Every pomodoro flag is an override: omit one and the session uses your Settings value (25/5 out of the box), so the CLI and the menu bar start identical sessions. Cycling, long-break length and cadence, and stop-after-set live in **Settings → General**, and are re-read at each phase boundary — change one mid-run and it takes effect at the next transition, not the next run.
@@ -89,6 +91,7 @@ The rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binar
 - `/etc/hosts.backup` — first-block backup
 - `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete, work_minutes, break_minutes)
 - `~/.focus-music.pid` — playback PID and station label (`pid\nlabel`), so `--stop` can reach it and the menu bar can name what's playing
+- `~/Library/Application Support/Focus/history.jsonl` — one JSON line per finished work phase (plus `completed: false` partials when a run is stopped mid-work); feeds `focus stats` and the menu bar's "Today" line
 
 ## Logs
 
