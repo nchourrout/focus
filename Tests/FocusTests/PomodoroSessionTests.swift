@@ -383,4 +383,82 @@ import Foundation
         let decoded = try JSONDecoder().decode(PomodoroSession.Active.self, from: data)
         #expect(decoded.workMinutes == 25 && decoded.breakMinutes == 5)
     }
+
+    // MARK: Pause / resume
+
+    @Test func decodeMissingPausedAtDefaultsNil() throws {
+        let legacy = """
+        {"goal":"g","pid":1,"started_at":0,"work_end":10,"break_end":20,"music":"","block":true}
+        """
+        let decoded = try JSONDecoder().decode(PomodoroSession.Active.self, from: Data(legacy.utf8))
+        #expect(decoded.pausedAt == nil, "files predating paused_at decode as never-paused")
+    }
+
+    @Test func pausedRecordRoundtripsThroughWireFormat() throws {
+        let frozen = PomodoroSession.default.paused(makeActive(), at: 1234)
+        let data = try JSONEncoder().encode(frozen)
+        let obj = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(obj["paused_at"] as? Double == 1234)
+        let decoded = try JSONDecoder().decode(PomodoroSession.Active.self, from: data)
+        #expect(decoded.pausedAt == 1234)
+    }
+
+    @Test func pausedLeavesDeadlinesAlone() {
+        let active = makeActive()
+        let frozen = PomodoroSession.default.paused(active, at: 1200)
+        #expect(frozen.pausedAt == 1200)
+        #expect(frozen.workEnd == active.workEnd)
+        #expect(frozen.breakEnd == active.breakEnd)
+    }
+
+    @Test func resumeOfLiveSessionIsNil() {
+        #expect(PomodoroSession.default.resumed(makeActive()) == nil)
+    }
+
+    /// Pausing mid-work and resuming later: the remaining work continues where
+    /// it left off, the planned break keeps its full length, and the history
+    /// bracket restarts at the resume instant so paused wall-clock never
+    /// counts as focus minutes.
+    @Test func resumeMidWorkShiftsDeadlinesAndRestartsTheBracket() {
+        // 1000..2500 work, break until 2800. Paused at 1500 (1000s in).
+        let active = makeActive(startedAt: 1000, workEnd: 2500, breakEnd: 2800)
+        let session = PomodoroSession.default
+
+        let frozen = session.paused(active, at: 1500)
+        // Resume 10 minutes of wall-clock later.
+        let back = session.resumed(frozen, at: 2100)!
+
+        #expect(back.pausedAt == nil)
+        #expect(back.startedAt == 2100)
+        #expect(back.pid == 0, "the caller stamps a fresh daemon's pid")
+        #expect(back.workEnd == 3100, "600s of work remained at pause")
+        #expect(back.breakEnd == 3400, "the 300s break keeps its full length")
+        #expect(session.phase(of: back, at: 2100).phase == .work)
+        #expect(session.phase(of: back, at: 2100).timeLeft == 1000)
+
+        // The resumed record re-serializes without the pause marker.
+        #expect((try? JSONEncoder().encode(back)) != nil)
+    }
+
+    @Test func resumeMidBreakKeepsReadingAsBreak() {
+        let active = makeActive(startedAt: 1000, workEnd: 2500, breakEnd: 2800)
+        let session = PomodoroSession.default
+
+        let frozen = session.paused(active, at: 2600)  // 200s into the break
+        let back = session.resumed(frozen, at: 3000)!   // 400s later
+
+        #expect(back.workEnd == 2900, "still firmly in the past")
+        #expect(back.breakEnd == 3200, "200s of break remained")
+        let derived = session.phase(of: back, at: 3000)
+        #expect(derived.phase == .break)
+        #expect(derived.timeLeft == 200)
+    }
+
+    @Test func resumeClampsAClockRunningBackwards() {
+        let frozen = PomodoroSession.default.paused(makeActive(), at: 5000)
+        // now before pausedAt: delta must not go negative.
+        let back = PomodoroSession.default.resumed(frozen, at: 4000)!
+        #expect(back.workEnd == makeActive().workEnd)
+        #expect(back.breakEnd == makeActive().breakEnd)
+    }
 }

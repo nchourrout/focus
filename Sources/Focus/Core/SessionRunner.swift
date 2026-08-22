@@ -51,14 +51,16 @@ struct SessionRunner {
     /// middle of a work phase (`pomodoro stop`, SIGTERM). Call before
     /// `endSession` — the state file is the source being read. Breaks and
     /// set-complete markers never get partials: their work phase already
-    /// earned its line at the boundary. The dedupe check covers the race where
-    /// the runner recorded the completion just before we tore down.
-    /// Stale-file recovery skips this entirely: a crashed daemon's elapsed
-    /// time is unknowable, so no fabricated entry.
-    static func recordPartialIfNeeded(clearing session: PomodoroSession, now: TimeInterval) {
+    /// earned its line at the boundary. Paused sessions skip too (their work
+    /// phase resumes later, so a partial would double-count its minutes). The
+    /// dedupe check covers the race where the runner recorded the completion
+    /// just before we tore down. Stale-file recovery skips this entirely:
+    /// a crashed daemon's elapsed time is unknowable, so no fabricated entry.
+    static func recordPartialIfNeeded(clearing session: PomodoroSession, now: TimeInterval,
+                                      history: SessionHistory = .default) {
         guard let active = session.current else { return }
+        guard active.pausedAt == nil else { return }
         guard session.phase(of: active, at: now).phase == .work else { return }
-        let history = SessionHistory.default
         guard !history.isAlreadyRecorded(startedAt: active.startedAt, goal: active.goal) else { return }
         history.append(SessionHistory.Entry(
             goal: active.goal,

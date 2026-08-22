@@ -39,6 +39,15 @@ import Foundation
         #expect(SessionStaleness.isStale(makeActive(pid: -1), liveness: { _, _ in true }))
     }
 
+    @Test func pausedSessionIsNeverStale() {
+        // The daemon of a paused session is gone by design; the record is
+        // owned, waiting for `pomodoro resume`. Liveness must be irrelevant.
+        var frozen = makeActive()
+        frozen.pausedAt = 1234
+        #expect(!SessionStaleness.isStale(frozen, liveness: { _, _ in false }))
+        #expect(!SessionStaleness.isStale(frozen, liveness: { _, _ in true }))
+    }
+
     @Test func stalenessIsIndependentOfBlockFlag() {
         #expect(!SessionStaleness.isStale(makeActive(block: false), liveness: Self.liveWhenPIDMatches))
         #expect(SessionStaleness.isStale(makeActive(block: false), liveness: { _, _ in false }))

@@ -10,11 +10,14 @@ enum SessionStaleness {
     /// True when the record cannot belong to a live Focus daemon. A missing or
     /// zero pid counts as stale: `PomodoroDaemon.launch` writes the real pid
     /// immediately after spawning, so pid 0 never describes a running session.
+    /// Paused sessions are the one exception — their daemon is gone by design,
+    /// waiting for `pomodoro resume` — so they read as owned, not abandoned.
     /// Liveness is injected so the decision is testable without a process
     /// table; production passes `isOurProcess(pid:expectedStart:)`, whose start-
     /// time comparison is what rules out PID recycling.
     static func isStale(_ active: PomodoroSession.Active,
                         liveness: (_ pid: Int32, _ startedAt: TimeInterval) -> Bool) -> Bool {
+        if active.pausedAt != nil { return false }
         guard active.pid > 0 else { return true }
         return !liveness(active.pid, active.startedAt)
     }

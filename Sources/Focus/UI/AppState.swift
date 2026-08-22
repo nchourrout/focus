@@ -8,6 +8,10 @@ import SwiftUI
 final class AppState: ObservableObject {
     @Published private(set) var pomodoro: PomodoroSession.Active?
     @Published private(set) var phase: PomodoroSession.Phase = .done
+    /// The record while its session is paused. Nil otherwise; a paused session
+    /// publishes no `pomodoro`, so `isRunning` reads false and the UI offers
+    /// Resume instead of Stop.
+    @Published private(set) var pausedSession: PomodoroSession.Active?
     @Published private(set) var blockActive: Bool = false
     @Published private(set) var musicPlaying: Bool = false
     /// What's playing. Nil while stopped, or when an older build wrote a
@@ -128,6 +132,24 @@ final class AppState: ObservableObject {
             staleDetector.reset()
         }
 
+        let wasPaused = pausedSession != nil
+
+        // Paused session: the daemon is gone by design, so there's nothing to
+        // probe or recover. Publish the record for the Resume affordances and
+        // settle everything else to idle until `resume` spawns a fresh daemon.
+        if let s = state, s.pausedAt != nil {
+            staleDetector.reset()
+            if pomodoro != nil { pomodoro = nil }
+            phase = .done
+            if pausedSession != s { pausedSession = s }
+            return
+        }
+        if pausedSession != nil {
+            // Resumed (or discarded): drop the marker before the normal path
+            // republishes a running session.
+            pausedSession = nil
+        }
+
         let prevPomodoro = pomodoro
         let prevPhase = phase
 
@@ -149,6 +171,9 @@ final class AppState: ObservableObject {
         if newPhase != phase { phase = newPhase }
 
         guard wasApplied else { return }
+        // A resume looks exactly like a fresh start to the transition detector;
+        // the user initiated it, so no banner is wanted either way.
+        guard !wasPaused else { return }
         emitTransitionNotification(
             from: (prevPomodoro, prevPhase),
             to: (pomodoro, phase)

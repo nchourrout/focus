@@ -15,6 +15,8 @@ struct MenuContent: View {
         // Settings → Shortcuts and handled by the KeyboardShortcuts library.
         if state.isRunning {
             pomodoroSection
+        } else if state.pausedSession != nil {
+            pausedSection
         } else {
             Button("Start pomodoro…") { Actions.promptAndStartPomodoro() }
         }
@@ -87,7 +89,19 @@ struct MenuContent: View {
             if state.phase == .break {
                 Button("Skip break") { Actions.skipBreak() }
             }
+            Button("Pause pomodoro") { Actions.pausePomodoro() }
             Button("Stop pomodoro") { Actions.stopPomodoro() }
+        }
+    }
+
+    @ViewBuilder
+    private var pausedSection: some View {
+        if let p = state.pausedSession {
+            Text("Paused: \(p.goal)")
+            Button("Resume pomodoro") { Actions.resumePomodoro() }
+            // Discards the frozen record entirely; the CLI's stop handles
+            // pid-less (paused) records by just clearing state.
+            Button("Discard pomodoro") { Actions.stopPomodoro() }
         }
     }
 }

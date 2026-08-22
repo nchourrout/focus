@@ -70,6 +70,8 @@ focus pomodoro start "deep work" --work 50 --break 10 --music groovesalad
 focus pomodoro start "quiet hour" --no-block
 focus pomodoro status                             # add --json
 focus pomodoro skip-break                         # end the current break early
+focus pomodoro pause                              # freeze the session; block lifts, music stops
+focus pomodoro resume                             # continue where it left off
 focus pomodoro stop
 
 focus stats                                       # today + last 7 days; --days N widens the window
@@ -89,7 +91,7 @@ The rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binar
 
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
-- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete, work_minutes, break_minutes)
+- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete, work_minutes, break_minutes, paused_at). A record with `paused_at` set sits frozen until resumed; starting a new session first requires resuming or stopping it.
 - `~/.focus-music.pid` — playback PID and station label (`pid\nlabel`), so `--stop` can reach it and the menu bar can name what's playing
 - `~/Library/Application Support/Focus/history.jsonl` — one JSON line per finished work phase (plus `completed: false` partials when a run is stopped mid-work); feeds `focus stats` and the menu bar's "Today" line
 

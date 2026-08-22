@@ -38,6 +38,16 @@ enum Actions {
         spawn(["pomodoro", "stop"])
     }
 
+    /// Freeze the running session; the block lifts and music stops until resume.
+    static func pausePomodoro() {
+        spawn(["pomodoro", "pause"])
+    }
+
+    /// Continue a paused session where it left off.
+    static func resumePomodoro() {
+        spawn(["pomodoro", "resume"])
+    }
+
     /// End the running break early; the next work phase starts immediately.
     /// No-op with a friendly message unless a session is resting in a break —
     /// the CLI owns those guards, so the menu item can fire freely.
@@ -45,10 +55,12 @@ enum Actions {
         spawn(["pomodoro", "skip-break"])
     }
 
-    /// Single-shortcut affordance: stop if a session is running, otherwise prompt
-    /// for a goal and start one.
+    /// Single-shortcut affordance: stop if a session is running, resume if one
+    /// is paused, otherwise prompt for a goal and start.
     static func togglePomodoro() {
-        if PomodoroSession.default.current != nil {
+        if PomodoroSession.default.current?.pausedAt != nil {
+            resumePomodoro()
+        } else if PomodoroSession.default.current != nil {
             stopPomodoro()
         } else {
             promptAndStartPomodoro()

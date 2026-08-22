@@ -32,6 +32,71 @@ enum PomodoroDaemon {
         print("focus: pomodoro started — \(plan.workMinutes)min work, \(plan.breakMinutes)min break — \(plan.goal)")
     }
 
+    /// Freeze the running session: tear down the daemon (block lifts, music
+    /// stops) but keep the record on disk, marked paused, so `resume` can
+    /// rebuild deadlines and spawn a fresh daemon.
+    static func pause() {
+        let session = PomodoroSession.default
+        guard let current = session.current,
+              !SessionStaleness.isStale(current, liveness: { isOurProcess(pid: $0, expectedStart: $1) })
+        else {
+            print("focus: no pomodoro running")
+            return
+        }
+        guard current.pausedAt == nil else {
+            print("focus: pomodoro is already paused")
+            return
+        }
+        guard session.phase(of: current).phase != .done else {
+            print("focus: pomodoro already finished its phases")
+            return
+        }
+
+        let now = Date().timeIntervalSince1970
+        let frozen = session.paused(current, at: now)
+        // Mark the file BEFORE signalling so the dying daemon's partial-history
+        // recorder sees the pause and skips it. The daemon sleeps mid-phase and
+        // writes only at boundaries, so nothing races this write; its teardown
+        // then clears the file, which we re-save below once it's gone.
+        try? session.save(frozen)
+        if current.pid > 0, isOurProcess(pid: current.pid, expectedStart: current.startedAt) {
+            _ = kill(current.pid, SIGTERM)
+            for _ in 0..<10 {
+                usleep(100_000)
+                if !isPIDAlive(current.pid) { break }
+            }
+        }
+        // Belt for a daemon that lost the signal race, mirroring stop().
+        SessionRunner.endSession(unblock: current.block, clearing: session,
+                                 effects: LiveSessionEffects())
+        try? session.save(frozen)
+        print("focus: pomodoro paused — resume with 'focus pomodoro resume'")
+    }
+
+    /// Continue a paused session: shift the stored deadlines by the elapsed
+    /// gap and spawn a fresh daemon for them.
+    static func resume() throws {
+        let session = PomodoroSession.default
+        guard let paused = session.current, paused.pausedAt != nil else {
+            print("focus: no paused pomodoro")
+            return
+        }
+        if paused.pid > 0, isOurProcess(pid: paused.pid, expectedStart: paused.startedAt) {
+            print("focus: pomodoro daemon unexpectedly alive; stop it before resuming")
+            return
+        }
+        // Unreachable when the guard above passed; kept as a guard so the
+        // compiler sees a real path instead of an optional.
+        guard let resumed = session.resumed(paused) else {
+            print("focus: no paused pomodoro")
+            return
+        }
+        let workMinutes = resumed.workMinutes ?? Defaults.workMinutes
+        let breakMinutes = resumed.breakMinutes ?? Defaults.breakMinutes
+        try spawn(active: resumed, workMinutes: workMinutes, breakMinutes: breakMinutes)
+        print("focus: pomodoro resumed")
+    }
+
     /// End the running break early and start the next work phase now.
     ///
     /// The replacement daemon replays the run's stored plan minutes rather
