@@ -55,48 +55,55 @@ import Foundation
 
     // MARK: StaleSessionDetector (two-tick confirmation)
 
-    private func feed(_ detector: inout StaleSessionDetector,
-                      _ active: PomodoroSession.Active?) -> Bool {
+    /// Feeds with the recorded process reported GONE — the stale scenario.
+    private func feedDead(_ detector: inout StaleSessionDetector,
+                          _ active: PomodoroSession.Active?) -> Bool {
+        detector.confirmStale(active, liveness: { _, _ in false })
+    }
+
+    /// Feeds with the process reported alive again.
+    private func feedLive(_ detector: inout StaleSessionDetector,
+                          _ active: PomodoroSession.Active?) -> Bool {
         detector.confirmStale(active, liveness: Self.liveWhenPIDMatches)
     }
 
     @Test func oneSightingDoesNotConfirm() {
         var detector = StaleSessionDetector()
-        #expect(!feed(&detector, makeActive()))
+        #expect(!feedDead(&detector, makeActive()))
     }
 
     @Test func twoConsecutiveSightingsConfirm() {
         var detector = StaleSessionDetector()
-        #expect(!feed(&detector, makeActive()))
-        #expect(feed(&detector, makeActive()))
+        #expect(!feedDead(&detector, makeActive()))
+        #expect(feedDead(&detector, makeActive()))
     }
 
     @Test func aThirdSightingStillConfirms() {
         var detector = StaleSessionDetector()
-        _ = feed(&detector, makeActive())
-        #expect(feed(&detector, makeActive()))
-        #expect(feed(&detector, makeActive()))
+        _ = feedDead(&detector, makeActive())
+        #expect(feedDead(&detector, makeActive()))
+        #expect(feedDead(&detector, makeActive()))
     }
 
     @Test func healthyReadResetsTheCount() {
         var detector = StaleSessionDetector()
-        #expect(!feed(&detector, makeActive()))
-        #expect(!feed(&detector, makeActive(startedAt: 1000)), "alive again (daemon restarted)")
-        #expect(!feed(&detector, makeActive()))
+        #expect(!feedDead(&detector, makeActive()))
+        #expect(!feedLive(&detector, makeActive()), "alive again; the count must drop")
+        #expect(!feedDead(&detector, makeActive()), "needs two fresh dead sightings")
     }
 
     @Test func absentFileResetsTheCount() {
         var detector = StaleSessionDetector()
-        #expect(!feed(&detector, makeActive()))
-        #expect(!feed(&detector, nil))
-        #expect(!feed(&detector, makeActive()), "needs two fresh sightings after reset")
+        #expect(!feedDead(&detector, makeActive()))
+        #expect(!feedDead(&detector, nil))
+        #expect(!feedDead(&detector, makeActive()), "needs two fresh sightings after reset")
     }
 
     @Test func aDifferentPidRestartsTheCount() {
         var detector = StaleSessionDetector()
-        #expect(!feed(&detector, makeActive(pid: 4242)))
-        #expect(!feed(&detector, makeActive(pid: 5151)))
-        #expect(!feed(&detector, makeActive(pid: 4242)))
-        #expect(feed(&detector, makeActive(pid: 4242)))
+        #expect(!feedDead(&detector, makeActive(pid: 4242)))
+        #expect(!feedDead(&detector, makeActive(pid: 5151)))
+        #expect(!feedDead(&detector, makeActive(pid: 4242)))
+        #expect(feedDead(&detector, makeActive(pid: 4242)))
     }
 }
