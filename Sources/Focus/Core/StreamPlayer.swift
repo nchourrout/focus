@@ -51,33 +51,67 @@ enum StreamPlayer {
         }
     }
 
-    /// Connect and play until the item reports a fatal failure (which stops the
-    /// current run loop) or the process is SIGTERMed. Blocks the caller.
+    /// Connect and play until the item reports a fatal failure or the process is
+    /// SIGTERMed. Blocks the caller; returning means this connection is done and
+    /// the caller may reconnect.
+    ///
+    /// Failure arrives two ways and both matter. `failedToPlayToEndTime` covers a
+    /// connection that dies mid-playback; an item that never opens at all (host
+    /// down, refused connection, 404 — the common case when the network drops)
+    /// only ever moves its `status` to `.failed`, and posts no notification. The
+    /// first version of this watched the notification alone and so sat forever on
+    /// an unreachable URL.
     private static func playOnce(url: URL) {
         let item = AVPlayerItem(url: url)
         let player = AVPlayer(playerItem: item)
         // Live radio: prefer instant start over buffer-to-avoid-stalls.
         player.automaticallyWaitsToMinimizeStalling = false
 
-        let center = NotificationCenter.default
-        let failed = AVPlayerItem.failedToPlayToEndTimeNotification
-        let stalled = AVPlayerItem.playbackStalledNotification
         let runLoop = RunLoop.current
-        _ = center.addObserver(forName: failed, object: item, queue: .main) { note in
-            let err = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription ?? "unknown"
-            Log.playback.error("stream failed, leaving this connection: \(err, privacy: .public)")
+        // Set on the main thread only (the observers below deliver there), and
+        // read by the run loop between passes, so no synchronisation is needed.
+        var ended = false
+        func endConnection(_ reason: String) {
+            guard !ended else { return }
+            ended = true
+            Log.playback.error("stream failed, leaving this connection: \(reason, privacy: .public)")
             CFRunLoopStop(runLoop.getCFRunLoop())
         }
-        _ = center.addObserver(forName: stalled, object: item, queue: .main) { _ in
-            // Stalls happen — AVPlayer usually recovers on its own. Only a
-            // terminal failure moves to the next connection.
-            Log.playback.notice("stream stalled")
+
+        let center = NotificationCenter.default
+        let observers = [
+            center.addObserver(forName: AVPlayerItem.failedToPlayToEndTimeNotification,
+                               object: item, queue: .main) { note in
+                let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+                endConnection(error?.localizedDescription ?? "unknown")
+            },
+            center.addObserver(forName: AVPlayerItem.playbackStalledNotification,
+                               object: item, queue: .main) { _ in
+                // Stalls happen — AVPlayer usually recovers on its own. Only a
+                // terminal failure moves to the next connection.
+                Log.playback.notice("stream stalled")
+            },
+        ]
+        let statusObserver = item.observe(\.status, options: [.initial, .new]) { item, _ in
+            guard item.status == .failed else { return }
+            let reason = item.error?.localizedDescription ?? "unknown"
+            // KVO delivers on whichever thread set the property; hop to main so
+            // `ended` stays single-threaded.
+            DispatchQueue.main.async { endConnection(reason) }
+        }
+        defer {
+            statusObserver.invalidate()
+            observers.forEach(center.removeObserver)
         }
 
         Log.playback.notice("streaming \(url.absoluteString, privacy: .public)")
         player.play()
-        // Block on the run loop; SIGTERM terminates the process and AVPlayer with it.
-        runLoop.run()
+        // Drive the run loop a pass at a time rather than calling `run()`, which
+        // re-enters `runMode` after every stop and so can never be broken out of:
+        // CFRunLoopStop would just start the next pass, leaving the reconnect in
+        // `run(url:)` unreachable. `run(mode:before:)` returning false means no
+        // input sources are left, which is also the end of this connection.
+        while !ended, runLoop.run(mode: .default, before: .distantFuture) {}
         player.pause()
     }
 }
