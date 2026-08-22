@@ -4,6 +4,9 @@ import AppKit
 struct MenuContent: View {
     @ObservedObject var state: AppState
     @Environment(\.openWindow) private var openWindow
+    /// Today's focused minutes, read once per menu open (onAppear). Kept out of
+    /// AppState so the 1 Hz tick never touches the history file.
+    @State private var todaysFocus: SessionHistory.Totals?
 
     var body: some View {
         // Note: no `keyboardShortcut(...)` on the action buttons — those would
@@ -12,6 +15,8 @@ struct MenuContent: View {
         // Settings → Shortcuts and handled by the KeyboardShortcuts library.
         if state.isRunning {
             pomodoroSection
+        } else if state.pausedSession != nil {
+            pausedSection
         } else {
             Button("Start pomodoro…") { Actions.promptAndStartPomodoro() }
         }
@@ -43,6 +48,13 @@ struct MenuContent: View {
 
         Divider()
 
+        if let focus = todaysFocus, focus.minutes > 0 {
+            Text("Today: \(focus.describe()) across \(focus.sessions) sessions")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Divider()
+        }
+
         // The standard Settings scene doesn't show its window for LSUIElement
         // menu bar apps. We use a regular Window scene (id: "settings") and
         // open it via the SwiftUI environment action.
@@ -51,6 +63,15 @@ struct MenuContent: View {
             openWindow(id: "settings")
         }
         .keyboardShortcut(",")
+        .onAppear {
+            // Off the main thread: the log is append-only and unbounded, so
+            // parsing it inline would stall the menu for longer every month.
+            Task {
+                todaysFocus = await Task.detached {
+                    SessionHistory.todayTotals(in: SessionHistory.default.entries())
+                }.value
+            }
+        }
 
         Button("Quit Focus") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
@@ -68,7 +89,22 @@ struct MenuContent: View {
             // No live countdown here — the menu bar label has it, and re-rendering
             // a menu item every second would reset AppKit's hover selection.
             Text(state.phase == .break ? (p.isLongBreak ? "Long break" : "Break") : p.goal)
+            if state.phase == .break {
+                Button("Skip break") { Actions.skipBreak() }
+            }
+            Button("Pause pomodoro") { Actions.pausePomodoro() }
             Button("Stop pomodoro") { Actions.stopPomodoro() }
+        }
+    }
+
+    @ViewBuilder
+    private var pausedSection: some View {
+        if let p = state.pausedSession {
+            Text("Paused: \(p.goal)")
+            Button("Resume pomodoro") { Actions.resumePomodoro() }
+            // Discards the frozen record entirely; the CLI's stop handles
+            // pid-less (paused) records by just clearing state.
+            Button("Discard pomodoro") { Actions.stopPomodoro() }
         }
     }
 }

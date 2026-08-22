@@ -4,6 +4,12 @@ enum Paths {
     static let hosts = URL(fileURLWithPath: "/etc/hosts")
     static let hostsBackup = URL(fileURLWithPath: "/etc/hosts.backup")
 
+    /// Advisory lock serializing concurrent /etc/hosts mutations (daemon phase
+    /// boundaries vs menu bar toggle vs a terminal's `focus toggle`). Lives in
+    /// /tmp: recreated on reboot, and only ever touched by root, since every
+    /// mutating command requires sudo.
+    static let hostsLockPath = "/tmp/com.nchourrout.focus.hosts.lock"
+
     static var pomodoroState: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".focus-pomodoro.json")
     }
@@ -19,14 +25,21 @@ enum Paths {
         Bundle.module.url(forResource: "block", withExtension: "txt")
     }
 
-    /// User-writable block list at ~/Library/Application Support/Focus/block.txt.
+    /// ~/Library/Application Support/Focus, the one directory Focus writes to.
     /// Resolved against the login user's home (NSHomeDirectoryForUser) so that
-    /// running under sudo doesn't steer the path into /var/root.
-    static var userBlockList: URL {
+    /// running under sudo doesn't steer the path into /var/root — everything
+    /// below derives from here so no new file can miss that.
+    static var appSupport: URL {
         let home = NSHomeDirectoryForUser(NSUserName()) ?? NSHomeDirectory()
         return URL(fileURLWithPath: home)
-            .appendingPathComponent("Library/Application Support/Focus/block.txt")
+            .appendingPathComponent("Library/Application Support/Focus")
     }
+
+    /// User-writable block list.
+    static var userBlockList: URL { appSupport.appendingPathComponent("block.txt") }
+
+    /// Append-only log of finished work sessions.
+    static var history: URL { appSupport.appendingPathComponent("history.jsonl") }
 
     /// Absolute path to the running executable, used to re-invoke ourselves.
     ///

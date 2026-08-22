@@ -126,6 +126,17 @@ struct StatusLabel: View {
                 Image(systemName: state.phase == .break ? "cup.and.saucer.fill" : "timer")
                 CountdownText(pomodoro: pomodoro)
             }
+        } else if let paused = state.pausedSession {
+            HStack(spacing: 4) {
+                Image(systemName: "pause.fill")
+                // The remaining seconds derive from the same phase rule the
+                // live countdown uses, read at the pause instant, which
+                // doesn't move.
+                Text(formatCountdown(
+                    PomodoroSession.default.phase(of: paused, at: paused.pausedAt ?? 0).timeLeft
+                ))
+                .monospacedDigit()
+            }
         } else {
             Image(systemName: state.blockActive ? "nosign" : "circle.dashed")
         }

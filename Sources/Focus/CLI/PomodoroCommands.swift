@@ -5,7 +5,7 @@ struct Pomodoro: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "pomodoro",
         abstract: "run a pomodoro session with block + music",
-        subcommands: [Start.self, Stop.self, PomodoroStatus.self]
+        subcommands: [Start.self, Pause.self, Resume.self, SkipBreak.self, Stop.self, PomodoroStatus.self]
     )
 }
 
@@ -69,12 +69,44 @@ extension Pomodoro {
         }
     }
 
+    struct Pause: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "pause",
+            abstract: "freeze the running pomodoro; resume it later"
+        )
+
+        func run() {
+            PomodoroDaemon.pause()
+        }
+    }
+
+    struct Resume: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "resume",
+            abstract: "continue a paused pomodoro"
+        )
+
+        func run() throws {
+            try PomodoroDaemon.resume()
+        }
+    }
+
+    struct SkipBreak: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "skip-break",
+            abstract: "end the current break early and start the next work phase"
+        )
+
+        func run() throws {
+            try PomodoroDaemon.skipBreak()
+        }
+    }
+
     struct PomodoroStatus: ParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "status",
             abstract: "show current pomodoro state"
         )
-
         @Flag(name: .customLong("json"), help: "Machine-readable output.")
         var json: Bool = false
 

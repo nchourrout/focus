@@ -38,14 +38,33 @@ enum Actions {
         spawn(["pomodoro", "stop"])
     }
 
-    /// Single-shortcut affordance: stop if a session is running, otherwise prompt
-    /// for a goal and start one.
+    /// Freeze the running session; the block lifts and music stops until resume.
+    static func pausePomodoro() {
+        spawn(["pomodoro", "pause"])
+    }
+
+    /// Continue a paused session where it left off.
+    static func resumePomodoro() {
+        spawn(["pomodoro", "resume"])
+    }
+
+    /// End the running break early; the next work phase starts immediately.
+    /// No-op with a friendly message unless a session is resting in a break —
+    /// the CLI owns those guards, so the menu item can fire freely.
+    static func skipBreak() {
+        spawn(["pomodoro", "skip-break"])
+    }
+
+    /// Single-shortcut affordance: stop if a session is running, resume if one
+    /// is paused, otherwise prompt for a goal and start.
     static func togglePomodoro() {
-        if PomodoroSession.default.current != nil {
-            stopPomodoro()
-        } else {
+        // One read: two would let the daemon write between them and route a
+        // record that no longer exists to stopPomodoro.
+        guard let current = PomodoroSession.default.current else {
             promptAndStartPomodoro()
+            return
         }
+        if current.pausedAt != nil { resumePomodoro() } else { stopPomodoro() }
     }
 
     // MARK: Block
@@ -67,7 +86,19 @@ enum Actions {
                     Task { @MainActor in showSudoersMissingAlert() }
                     return
                 }
-                let active = stdout.contains("\"active\": true")
+                // Decode the documented payload rather than substring-matching
+                // it. On the (bug-shaped) failure path, skip the banner: the
+                // AppState tick reflects the real /etc/hosts state within 1s.
+                let active: Bool
+                do {
+                    active = try JSONDecoder()
+                        .decode(BlockStatus.self, from: Data(stdout.utf8)).active
+                } catch {
+                    Log.actions.error(
+                        "toggle --json output didn't decode as BlockStatus: \(stdout, privacy: .public)"
+                    )
+                    return
+                }
                 Task { @MainActor in
                     LocalNotifications.post(
                         title: active ? "Websites blocked" : "Websites unblocked",
@@ -134,9 +165,10 @@ enum Actions {
 
     /// Same as `spawn` but routes through `sudo -n`. Requires the sudoers drop-in.
     /// Uses `onExit` (event-driven, no thread parking) to detect sudo failures and
-    /// surface an alert, so the user understands why the menu action appeared to
-    /// do nothing.
-    private static func spawnSudo(_ args: [String]) {
+    /// surface an alert, so the user understands why the action appeared to
+    /// do nothing. Shared with `AppState`'s dead-daemon recovery, which unblocks
+    /// on the user's behalf after cleaning up a crashed session.
+    static func spawnSudo(_ args: [String]) {
         do {
             let handle = try Shell.spawn(Shell.Command(Paths.selfExecutable, args, sudo: true))
             handle.onExit { status, _ in

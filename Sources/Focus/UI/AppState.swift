@@ -8,6 +8,10 @@ import SwiftUI
 final class AppState: ObservableObject {
     @Published private(set) var pomodoro: PomodoroSession.Active?
     @Published private(set) var phase: PomodoroSession.Phase = .done
+    /// The record while its session is paused. Nil otherwise; a paused session
+    /// publishes no `pomodoro`, so `isRunning` reads false and the UI offers
+    /// Resume instead of Stop.
+    @Published private(set) var pausedSession: PomodoroSession.Active?
     @Published private(set) var blockActive: Bool = false
     @Published private(set) var musicPlaying: Bool = false
     /// What's playing. Nil while stopped, or when an older build wrote a
@@ -23,6 +27,10 @@ final class AppState: ObservableObject {
     /// a running session (the daemon survived an app restart) and we shouldn't
     /// fire "Pomodoro started" against a session that began ages ago.
     private var hasAppliedOnce = false
+    /// Confirms dead-daemon sightings across consecutive ticks; see its type
+    /// for why one sighting isn't enough. Lives on the main actor, which is
+    /// also where the (cheap) liveness probe runs.
+    private var staleDetector = StaleSessionDetector()
 
     init() {
         Task { await refresh() }
@@ -89,6 +97,60 @@ final class AppState: ObservableObject {
             return
         }
 
+        // Dead-daemon recovery: a state file whose pid no longer belongs to a
+        // live Focus daemon is what a crash, `kill -9`, or a reboot leaves
+        // behind. Left alone it shows as a phantom countdown forever, and a
+        // crash mid-work-phase keeps the /etc/hosts block on with nothing to
+        // lift it. The detector demands two consecutive sightings so a normal
+        // `pomodoro stop` (which clears the file itself, up to ~1s after the
+        // daemon dies) never trips this path. Recovery mirrors set-complete:
+        // always clear and unblock, but stay quiet when the leftover predates
+        // this launch — that session ended while the app was closed.
+        var state = state
+        // `confirmStale` takes the optional itself and clears its own counter on
+        // any absent or healthy read, so this is the one place a tick feeds it.
+        if staleDetector.confirmStale(state), let s = state {
+            PomodoroSession.default.clear()
+            // Lift the block only when this run owned one AND the markers are
+            // still in /etc/hosts: a manual unblock during the gap makes the
+            // sudo call pointless, and --no-block sessions never had one.
+            if s.block && newBlock {
+                Actions.spawnSudo(["unblock"])
+            }
+            if wasApplied {
+                LocalNotifications.post(
+                    title: "Session interrupted",
+                    body: "Focus cleaned up a pomodoro that ended unexpectedly.",
+                    sound: nil
+                )
+                Sounds.play(.sessionEnd)
+            }
+            Log.actions.notice(
+                "recovered stale session (pid \(s.pid), goal \(s.goal, privacy: .public))"
+            )
+            state = nil
+        }
+
+        let wasPaused = pausedSession != nil
+
+        // Paused session: the daemon is gone by design, so there's nothing to
+        // probe or recover. Publish the record for the Resume affordances and
+        // settle everything else to idle until `resume` spawns a fresh daemon.
+        if let s = state, s.pausedAt != nil {
+            if pomodoro != nil { pomodoro = nil }
+            // Guarded like every other publish here: an unguarded assignment
+            // fires objectWillChange on all 1 Hz ticks of the pause, re-rendering
+            // the menu bar for the whole time the session sits frozen.
+            if phase != .done { phase = .done }
+            if pausedSession != s { pausedSession = s }
+            return
+        }
+        if pausedSession != nil {
+            // Resumed (or discarded): drop the marker before the normal path
+            // republishes a running session.
+            pausedSession = nil
+        }
+
         let prevPomodoro = pomodoro
         let prevPhase = phase
 
@@ -110,6 +172,9 @@ final class AppState: ObservableObject {
         if newPhase != phase { phase = newPhase }
 
         guard wasApplied else { return }
+        // A resume looks exactly like a fresh start to the transition detector;
+        // the user initiated it, so no banner is wanted either way.
+        guard !wasPaused else { return }
         emitTransitionNotification(
             from: (prevPomodoro, prevPhase),
             to: (pomodoro, phase)

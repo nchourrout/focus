@@ -13,6 +13,7 @@ struct FocusCLI: ParsableCommand {
             StatusCommand.self,
             Music.self,
             Pomodoro.self,
+            StatsCommand.self,
             AfplayLoop.self,
             StreamPlay.self,
             PomodoroRun.self,
@@ -58,8 +59,20 @@ func resolveBlockFile(_ override: String?) throws -> URL {
     throw CLIError.missingFile(URL(fileURLWithPath: "block.txt"))
 }
 
-/// Minimal JSON printer (Foundation JSONEncoder reorders keys unpredictably; we
-/// keep output small and deterministic so consumers can grep).
+/// The machine-readable payload of `status --json` and `toggle --json`.
+///
+/// One type shared by both ends of the pipe. Emission stays hand-formatted,
+/// deliberately not JSONEncoder: Foundation reorders keys unpredictably and
+/// writes compact spacing, while the documented wire form is grep-stable
+/// (`{"active": true}`, see README). Consumption goes through a real decoder,
+/// so the menu bar never substring-matches output.
+struct BlockStatus: Codable {
+    let active: Bool
+
+    /// The exact bytes this CLI has always written; pinned by test.
+    var wireFormat: String { "{\"active\": \(active)}" }
+}
+
 func printJSONActive(_ active: Bool) {
-    print("{\"active\": \(active ? "true" : "false")}")
+    print(BlockStatus(active: active).wireFormat)
 }

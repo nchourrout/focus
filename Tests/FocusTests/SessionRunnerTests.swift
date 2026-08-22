@@ -86,6 +86,15 @@ private final class FakeEffects: SessionEffects {
         return session
     }
 
+    /// A history log pointed at a fresh tmp file, so a test can assert on what
+    /// the run actually banked.
+    private func makeHistory() throws -> SessionHistory {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("session-runner-history-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return SessionHistory(url: dir.appendingPathComponent("history.jsonl"))
+    }
+
     private func run(
         plan: PomodoroPlan, session: PomodoroSession, effects: FakeEffects
     ) {
@@ -272,5 +281,88 @@ private final class FakeEffects: SessionEffects {
 
         #expect(effects.sleeps == 2, "the run ends instead of starting a phantom session")
         #expect(session.current == nil, "no phantom state written back")
+    }
+
+    // MARK: History
+
+    @Test func aFinishedWorkPhaseIsBanked() throws {
+        let session = try makeSession()
+        let history = try makeHistory()
+        let effects = FakeEffects(clock: Self.start, cadence: makeCadence(keepCycling: false))
+
+        SessionRunner(plan: makePlan(), session: session, effects: effects, history: history)
+            .run(workEnd: Self.workEnd, breakEnd: Self.breakEnd)
+
+        let entries = history.entries()
+        #expect(entries.count == 1)
+        #expect(entries.first?.startedAt == Self.start)
+        #expect(entries.first?.endedAt == Self.workEnd)
+        #expect(entries.first?.minutes == 25)
+        #expect(entries.first?.completed == true)
+    }
+
+    /// Resuming a session that was paused during its break hands the runner a
+    /// work deadline already spent. That phase ran, and was banked, before the
+    /// pause: replaying it would re-apply the block for an instant and write a
+    /// line that ends before it starts.
+    @Test func resumingIntoABreakSkipsTheSpentWorkPhase() throws {
+        let session = try makeSession()
+        let history = try makeHistory()
+        // Paused 60s into the break, so the clock is past the work deadline.
+        let effects = FakeEffects(clock: Self.workEnd + 60, cadence: makeCadence(keepCycling: false))
+
+        SessionRunner(plan: makePlan(), session: session, effects: effects, history: history)
+            .run(workEnd: Self.workEnd, breakEnd: Self.breakEnd)
+
+        #expect(!effects.events.contains(.applyBlock), "the work phase is behind us")
+        #expect(effects.sleepDeadlines == [Self.breakEnd], "straight to the rest")
+        #expect(history.entries().isEmpty, "no phantom line for a phase this run never worked")
+        #expect(session.current == nil, "teardown still clears the state file")
+    }
+
+    // MARK: Partial recording
+
+    @Test func stoppingMidWorkBanksWhatWasWorked() throws {
+        let session = try makeSession()
+        let history = try makeHistory()
+
+        SessionRunner.recordPartialIfNeeded(
+            clearing: session, now: Self.start + 600, history: history
+        )
+
+        let entries = history.entries()
+        #expect(entries.count == 1)
+        #expect(entries.first?.minutes == 10)
+        #expect(entries.first?.completed == false, "the phase never reached its deadline")
+    }
+
+    /// What `pause` writes before it stamps the record: the minutes already
+    /// earned. `resume` restarts `startedAt`, so nothing else would keep them.
+    @Test func aPausedRecordIsBankedOnceNotTwice() throws {
+        let session = try makeSession()
+        let history = try makeHistory()
+        let pausedAt = Self.start + 600
+
+        // `pause` records first, while the record still reads as running...
+        SessionRunner.recordPartialIfNeeded(clearing: session, now: pausedAt, history: history)
+        let current = try #require(session.current)
+        try session.save(session.paused(current, at: pausedAt))
+        // ...then the daemon dying on the SIGTERM must not record it again.
+        SessionRunner.recordPartialIfNeeded(clearing: session, now: pausedAt, history: history)
+
+        #expect(history.entries().count == 1, "one partial for one interrupted phase")
+        #expect(history.entries().first?.minutes == 10)
+    }
+
+    @Test func stoppingMidBreakBanksNothing() throws {
+        let session = try makeSession()
+        let history = try makeHistory()
+
+        // Past the work deadline: that phase already earned its own line.
+        SessionRunner.recordPartialIfNeeded(
+            clearing: session, now: Self.workEnd + 60, history: history
+        )
+
+        #expect(history.entries().isEmpty, "a break is not work")
     }
 }

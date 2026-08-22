@@ -29,6 +29,11 @@ struct SessionRunner {
     let plan: PomodoroPlan
     let session: PomodoroSession
     let effects: SessionEffects
+    /// Non-nil in the daemon, where finished work phases land in the history
+    /// log; nil elsewhere (tests, teardown-only construction). Kept optional
+    /// so the log stays a daemon concern rather than an effect every caller
+    /// must fake.
+    var history: SessionHistory?
 
     /// Tear down everything a run leaves behind. `unblock` is false for a session
     /// that never blocked, which spares a `sudo -n` call (and the matching prompt
@@ -40,6 +45,25 @@ struct SessionRunner {
         if unblock { effects.removeBlock() }
         effects.stopMusic()
         session.clear()
+    }
+
+    /// Append a `completed: false` history line when a run is torn down in the
+    /// middle of a work phase (`pomodoro stop`, SIGTERM). Call before
+    /// `endSession` — the state file is the source being read. Breaks and
+    /// set-complete markers never get partials: their work phase already
+    /// earned its line at the boundary. Paused sessions skip too — `pause`
+    /// calls this itself before stamping the record, so by the time it reads
+    /// paused the line exists and a second one would double-count. The dedupe
+    /// check covers the race where the runner recorded the completion just
+    /// before we tore down. Stale-file recovery skips this entirely:
+    /// a crashed daemon's elapsed time is unknowable, so no fabricated entry.
+    static func recordPartialIfNeeded(clearing session: PomodoroSession, now: TimeInterval,
+                                      history: SessionHistory = .default) {
+        guard let active = session.current else { return }
+        guard active.pausedAt == nil else { return }
+        guard session.phase(of: active, at: now).phase == .work else { return }
+        guard !history.isAlreadyRecorded(startedAt: active.startedAt, goal: active.goal) else { return }
+        history.append(SessionHistory.Entry(workPhaseOf: active, endedAt: now, completed: false))
     }
 
     /// Write state, and say so when it doesn't take. A failed save leaves the
@@ -68,34 +92,58 @@ struct SessionRunner {
     ///   for the next iteration, rewrites the state file, and starts a fresh work
     ///   phase with the same goal. Music carries over so playback isn't restarted.
     func run(workEnd: TimeInterval, breakEnd: TimeInterval) {
-        if plan.block { effects.applyBlock() }
+        // Resuming into a break (`pomodoro resume` on a session paused while
+        // resting) hands us a work deadline that is already behind us. That
+        // work phase ran, and was recorded, before the pause — replaying it
+        // here would re-apply the block for an instant and append a phantom
+        // history line ending before it started. Skip straight to the rest.
+        var skippingWorkPhase = effects.now >= workEnd
+
+        if plan.block, !skippingWorkPhase { effects.applyBlock() }
         if let station = plan.station { effects.startMusic(station) }
 
         var currentWorkEnd = workEnd
         var currentBreakEnd = breakEnd
 
         while true {
-            effects.sleep(until: currentWorkEnd)
+            if !skippingWorkPhase {
+                effects.sleep(until: currentWorkEnd)
 
-            // Stop-after-set: when cycling is on and the user opted to stop at
-            // each set boundary (every Nth session — the same cadence that earns
-            // the long break), end here without taking the final break. Clean up
-            // as a normal stop, then leave a terminal marker so the menu bar app
-            // posts the "start another set" notification.
-            let atWorkEnd = effects.cadence
-            if atWorkEnd.keepCycling, atWorkEnd.stopAfterSet,
-               let prev = session.current,
-               session.hasLongBreak(sessionNumber: prev.sessionNumber,
-                                    every: atWorkEnd.sessionsBeforeLongBreak) {
-                Self.endSession(unblock: plan.block, clearing: session, effects: effects)
-                Self.save(session.completedSet(from: prev, at: effects.now),
-                          to: session, what: "set-complete marker")
-                return
+                // Read once and share: the file still holds this phase's record
+                // until the loop rolls the next one, and both consumers below
+                // should see the same instant of it.
+                let finished = session.current
+
+                // One history line per finished work phase — its startedAt and
+                // workEnd bracket exactly what was worked.
+                if let history, let cur = finished {
+                    history.append(SessionHistory.Entry(
+                        workPhaseOf: cur, endedAt: effects.now, completed: true
+                    ))
+                }
+
+                // Stop-after-set: when cycling is on and the user opted to stop at
+                // each set boundary (every Nth session — the same cadence that earns
+                // the long break), end here without taking the final break. Clean up
+                // as a normal stop, then leave a terminal marker so the menu bar app
+                // posts the "start another set" notification.
+                let atWorkEnd = effects.cadence
+                if atWorkEnd.keepCycling, atWorkEnd.stopAfterSet,
+                   let prev = finished,
+                   session.hasLongBreak(sessionNumber: prev.sessionNumber,
+                                        every: atWorkEnd.sessionsBeforeLongBreak) {
+                    Self.endSession(unblock: plan.block, clearing: session, effects: effects)
+                    Self.save(session.completedSet(from: prev, at: effects.now),
+                              to: session, what: "set-complete marker")
+                    return
+                }
+
+                // Entering the break: lift the block so the user can browse freely
+                // while resting. Re-applied when the next work phase begins.
+                if plan.block { effects.removeBlock() }
             }
-
-            // Entering the break: lift the block so the user can browse freely
-            // while resting. Re-applied when the next work phase begins.
-            if plan.block { effects.removeBlock() }
+            // Only the first pass can inherit a spent work deadline.
+            skippingWorkPhase = false
 
             effects.sleep(until: currentBreakEnd)
 
@@ -138,10 +186,20 @@ struct LiveSessionEffects: SessionEffects {
     var now: TimeInterval { Date().timeIntervalSince1970 }
     var cadence: PomodoroCadence { .fromSettings }
 
+    /// Sleep to an absolute wall-clock deadline.
+    ///
+    /// Sliced rather than one long `Thread.sleep` because that call measures
+    /// uptime, which freezes while a Mac sleeps: close the lid mid-work-phase
+    /// and the single sleep would keep counting after wake, firing the
+    /// work→break transition minutes late while the menu bar (wall-clock
+    /// derived) already shows the break. Recomputing the remainder every five
+    /// seconds bounds any such drift to one slice.
     func sleep(until deadline: TimeInterval) {
-        let remaining = deadline - now
-        if remaining > 0 {
-            Thread.sleep(forTimeInterval: remaining)
+        let slice: TimeInterval = 5
+        while true {
+            let remaining = deadline - now
+            guard remaining > 0 else { return }
+            Thread.sleep(forTimeInterval: min(remaining, slice))
         }
     }
 

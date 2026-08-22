@@ -42,6 +42,30 @@ struct PomodoroSession {
         /// then clears the file. Always false on a live session. Files predating
         /// this field decode as false.
         var setComplete: Bool
+        /// Work/break minutes of the plan this run launched with, so commands
+        /// acting mid-run (`pomodoro skip-break`) rebuild deadlines faithfully
+        /// even when Settings changed since launch — durations are fixed for
+        /// the duration of one run (see `PomodoroPlan`). Files predating these
+        /// fields decode as nil; callers fall back to current Settings, which
+        /// reproduces the pre-schema behaviour.
+        var workMinutes: Int?
+        var breakMinutes: Int?
+        /// Pause marker: non-nil while the session sits paused (daemon torn
+        /// down, block lifted, music stopped). The remaining time derives from
+        /// the stored deadlines minus this instant, so one field carries the
+        /// whole pause state; `resumed(at:)` shifts the deadlines by the
+        /// elapsed gap. Files predating it decode as nil (never paused).
+        /// While set, the record is intentionally ownerless: staleness probes,
+        /// partial-history recording, and dead-daemon recovery all skip it.
+        var pausedAt: TimeInterval?
+
+        /// The run's work/break lengths, with the pre-schema fallback applied
+        /// once. Files predating `work_minutes`/`break_minutes` decode as nil;
+        /// resolving to current Settings here reproduces exactly what those
+        /// runs did, and keeps the migration rule in one place instead of at
+        /// every command that acts mid-run.
+        var effectiveWorkMinutes: Int { workMinutes ?? Defaults.workMinutes }
+        var effectiveBreakMinutes: Int { breakMinutes ?? Defaults.breakMinutes }
 
         enum CodingKeys: String, CodingKey {
             case goal, pid, music, block
@@ -51,13 +75,18 @@ struct PomodoroSession {
             case sessionNumber = "session_number"
             case isLongBreak = "is_long_break"
             case setComplete = "set_complete"
+            case workMinutes = "work_minutes"
+            case breakMinutes = "break_minutes"
+            case pausedAt = "paused_at"
         }
 
         init(goal: String, pid: Int32, startedAt: TimeInterval,
              workEnd: TimeInterval, breakEnd: TimeInterval,
              music: String?, block: Bool,
              sessionNumber: Int = 1, isLongBreak: Bool = false,
-             setComplete: Bool = false) {
+             setComplete: Bool = false,
+             workMinutes: Int? = nil, breakMinutes: Int? = nil,
+             pausedAt: TimeInterval? = nil) {
             self.goal = goal
             self.pid = pid
             self.startedAt = startedAt
@@ -68,6 +97,9 @@ struct PomodoroSession {
             self.sessionNumber = sessionNumber
             self.isLongBreak = isLongBreak
             self.setComplete = setComplete
+            self.workMinutes = workMinutes
+            self.breakMinutes = breakMinutes
+            self.pausedAt = pausedAt
         }
 
         init(from decoder: Decoder) throws {
@@ -83,6 +115,9 @@ struct PomodoroSession {
             sessionNumber = try c.decodeIfPresent(Int.self, forKey: .sessionNumber) ?? 1
             isLongBreak = try c.decodeIfPresent(Bool.self, forKey: .isLongBreak) ?? false
             setComplete = try c.decodeIfPresent(Bool.self, forKey: .setComplete) ?? false
+            workMinutes = try c.decodeIfPresent(Int.self, forKey: .workMinutes)
+            breakMinutes = try c.decodeIfPresent(Int.self, forKey: .breakMinutes)
+            pausedAt = try c.decodeIfPresent(TimeInterval.self, forKey: .pausedAt)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -97,6 +132,9 @@ struct PomodoroSession {
             try c.encode(sessionNumber, forKey: .sessionNumber)
             try c.encode(isLongBreak, forKey: .isLongBreak)
             try c.encode(setComplete, forKey: .setComplete)
+            try c.encodeIfPresent(workMinutes, forKey: .workMinutes)
+            try c.encodeIfPresent(breakMinutes, forKey: .breakMinutes)
+            try c.encodeIfPresent(pausedAt, forKey: .pausedAt)
         }
     }
 
@@ -166,7 +204,8 @@ struct PomodoroSession {
             goal: plan.goal, pid: pid, startedAt: start,
             workEnd: workEnd, breakEnd: breakEnd,
             music: plan.station?.uri, block: plan.block,
-            sessionNumber: 1, isLongBreak: long
+            sessionNumber: 1, isLongBreak: long,
+            workMinutes: plan.workMinutes, breakMinutes: plan.breakMinutes
         )
     }
 
@@ -187,7 +226,8 @@ struct PomodoroSession {
             goal: prev.goal, pid: prev.pid, startedAt: start,
             workEnd: workEnd, breakEnd: breakEnd,
             music: prev.music, block: prev.block,
-            sessionNumber: sessionNumber, isLongBreak: long
+            sessionNumber: sessionNumber, isLongBreak: long,
+            workMinutes: workMinutes, breakMinutes: breakMinutes
         )
     }
 
@@ -204,7 +244,47 @@ struct PomodoroSession {
             // No break follows a set-complete marker, so isLongBreak is moot — keep
             // it false rather than carrying a flag for a break that never happens.
             sessionNumber: prev.sessionNumber, isLongBreak: false,
-            setComplete: true
+            setComplete: true,
+            workMinutes: prev.workMinutes, breakMinutes: prev.breakMinutes
+        )
+    }
+
+    // MARK: Pause / resume
+
+    /// Stamp `active` as paused at `now`. The deadlines stay untouched — the
+    /// remaining time derives from them minus `pausedAt`, so one field carries
+    /// the whole pause state. Callers tear down the daemon around this write:
+    /// pausing releases the block (the teardown unblocks) and stops playback.
+    func paused(_ active: Active,
+                at now: TimeInterval = Date().timeIntervalSince1970) -> Active {
+        var copy = active
+        copy.pausedAt = now
+        return copy
+    }
+
+    /// Undo a pause: shift both deadlines forward by the elapsed gap so the
+    /// phase and its remaining seconds continue exactly where they left off.
+    /// `startedAt` moves to the resume instant too — it brackets the history
+    /// entry for this work phase, which should measure focus, not wall-clock
+    /// including the pause. Returns nil when `active` isn't paused. The pid is
+    /// zeroed; the caller spawns a fresh daemon and stamps its pid.
+    func resumed(_ active: Active,
+                 at now: TimeInterval = Date().timeIntervalSince1970) -> Active? {
+        guard let pausedAt = active.pausedAt else { return nil }
+        let delta = max(0, now - pausedAt)
+        return Active(
+            goal: active.goal,
+            pid: 0,
+            startedAt: now,
+            workEnd: active.workEnd + delta,
+            breakEnd: active.breakEnd + delta,
+            music: active.music,
+            block: active.block,
+            sessionNumber: active.sessionNumber,
+            isLongBreak: active.isLongBreak,
+            setComplete: active.setComplete,
+            workMinutes: active.workMinutes,
+            breakMinutes: active.breakMinutes
         )
     }
 }
