@@ -19,6 +19,18 @@ struct SiteBlock {
     let hostsURL: URL
     let backupURL: URL
     let dnsFlush: () -> Void
+    /// Advisory lock path for the mutation cycle. Nil runs unlocked (sandbox
+    /// tests); production locks `Paths.hostsLockPath` so a daemon applying the
+    /// block at a phase boundary can't interleave with a manual toggle.
+    private let lockPath: String?
+
+    init(hostsURL: URL, backupURL: URL, dnsFlush: @escaping () -> Void,
+         lockPath: String? = Paths.hostsLockPath) {
+        self.hostsURL = hostsURL
+        self.backupURL = backupURL
+        self.dnsFlush = dnsFlush
+        self.lockPath = lockPath
+    }
 
     // MARK: Interface
 
@@ -32,30 +44,32 @@ struct SiteBlock {
     /// installed. Requires root. Flushes DNS on success.
     @discardableResult
     func activate(sites: [String], doh: Bool = true) throws -> Int {
-        let extras = doh ? Self.dohEndpoints : []
-        guard !sites.isEmpty || !extras.isEmpty else { return 0 }
-        try backupOnce()
-        let cleaned = Self.strip(try read())
-        try write(cleaned + Self.renderBlock(sites: sites, extraExactDomains: extras))
-        dnsFlush()
-        return sites.count + extras.count
+        try withHostsLock { try activateUnlocked(sites: sites, doh: doh) }
     }
 
     /// Remove the block section. Requires root.
     func deactivate() throws {
-        try write(Self.strip(try read()))
-        dnsFlush()
+        try withHostsLock { try deactivateUnlocked() }
     }
 
     /// Flip the block. Returns the new state (true = now blocking).
+    ///
+    /// One lock spans the isActive check and the write: checking outside would
+    /// race a concurrent writer between check and mutate, double-toggling or
+    /// losing the section entirely. The internals are called directly (rather
+    /// than through the locking public wrappers) because flock is per open
+    /// file description — nesting two acquisitions in this process would
+    /// deadlock against itself.
     @discardableResult
     func toggle(sites: [String], doh: Bool = true) throws -> Bool {
-        if isActive {
-            try deactivate()
-            return false
-        } else {
-            try activate(sites: sites, doh: doh)
-            return true
+        try withHostsLock {
+            if isActive {
+                try deactivateUnlocked()
+                return false
+            } else {
+                _ = try activateUnlocked(sites: sites, doh: doh)
+                return true
+            }
         }
     }
 
@@ -133,6 +147,28 @@ struct SiteBlock {
     }
 
     // MARK: Private
+
+    /// The mutation cycle assumes it holds the hosts lock; public wrappers
+    /// acquire it, `toggle` reuses these under its own single acquisition.
+    private func activateUnlocked(sites: [String], doh: Bool) throws -> Int {
+        let extras = doh ? Self.dohEndpoints : []
+        guard !sites.isEmpty || !extras.isEmpty else { return 0 }
+        try backupOnce()
+        let cleaned = Self.strip(try read())
+        try write(cleaned + Self.renderBlock(sites: sites, extraExactDomains: extras))
+        dnsFlush()
+        return sites.count + extras.count
+    }
+
+    private func deactivateUnlocked() throws {
+        try write(Self.strip(try read()))
+        dnsFlush()
+    }
+
+    private func withHostsLock<T>(_ body: () throws -> T) rethrows -> T {
+        guard let lockPath else { return try body() }
+        return try FileLock(path: lockPath).withExclusiveLock(body)
+    }
 
     private func read() throws -> String {
         try String(contentsOf: hostsURL, encoding: .utf8)

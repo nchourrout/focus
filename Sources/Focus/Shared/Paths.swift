@@ -4,6 +4,12 @@ enum Paths {
     static let hosts = URL(fileURLWithPath: "/etc/hosts")
     static let hostsBackup = URL(fileURLWithPath: "/etc/hosts.backup")
 
+    /// Advisory lock serializing concurrent /etc/hosts mutations (daemon phase
+    /// boundaries vs menu bar toggle vs a terminal's `focus toggle`). Lives in
+    /// /tmp: recreated on reboot, and only ever touched by root, since every
+    /// mutating command requires sudo.
+    static let hostsLockPath = "/tmp/com.nchourrout.focus.hosts.lock"
+
     static var pomodoroState: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".focus-pomodoro.json")
     }

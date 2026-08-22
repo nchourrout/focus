@@ -105,7 +105,8 @@ import Testing
     // MARK: Interface — round-trip against a sandboxed hosts file
 
     /// Build a SiteBlock pointed at a freshly-created tmp hosts file (seeded with
-    /// `seed`) and a tmp backup path. dnsFlush is a no-op.
+    /// `seed`), a tmp backup path, and its own tmp lock so suites running in
+    /// parallel never contend. dnsFlush is a no-op.
     private func makeSandbox(seed: String = "127.0.0.1 localhost\n::1 localhost\n")
     throws -> (block: SiteBlock, hosts: URL, backup: URL)
     {
@@ -115,7 +116,8 @@ import Testing
         let hosts = dir.appendingPathComponent("hosts")
         let backup = dir.appendingPathComponent("hosts.backup")
         try seed.write(to: hosts, atomically: true, encoding: .utf8)
-        let block = SiteBlock(hostsURL: hosts, backupURL: backup, dnsFlush: {})
+        let block = SiteBlock(hostsURL: hosts, backupURL: backup, dnsFlush: {},
+                              lockPath: dir.appendingPathComponent("hosts.lock").path)
         return (block, hosts, backup)
     }
 
@@ -184,7 +186,8 @@ import Testing
         let block = SiteBlock(
             hostsURL: hosts,
             backupURL: dir.appendingPathComponent("hosts.backup"),
-            dnsFlush: { counter.n += 1 }
+            dnsFlush: { counter.n += 1 },
+            lockPath: dir.appendingPathComponent("hosts.lock").path
         )
         try block.activate(sites: ["x.com"], doh: false)
         try block.deactivate()
