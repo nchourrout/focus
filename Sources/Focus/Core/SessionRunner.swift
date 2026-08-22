@@ -51,10 +51,11 @@ struct SessionRunner {
     /// middle of a work phase (`pomodoro stop`, SIGTERM). Call before
     /// `endSession` — the state file is the source being read. Breaks and
     /// set-complete markers never get partials: their work phase already
-    /// earned its line at the boundary. Paused sessions skip too (their work
-    /// phase resumes later, so a partial would double-count its minutes). The
-    /// dedupe check covers the race where the runner recorded the completion
-    /// just before we tore down. Stale-file recovery skips this entirely:
+    /// earned its line at the boundary. Paused sessions skip too — `pause`
+    /// calls this itself before stamping the record, so by the time it reads
+    /// paused the line exists and a second one would double-count. The dedupe
+    /// check covers the race where the runner recorded the completion just
+    /// before we tore down. Stale-file recovery skips this entirely:
     /// a crashed daemon's elapsed time is unknowable, so no fabricated entry.
     static func recordPartialIfNeeded(clearing session: PomodoroSession, now: TimeInterval,
                                       history: SessionHistory = .default) {
@@ -97,47 +98,58 @@ struct SessionRunner {
     ///   for the next iteration, rewrites the state file, and starts a fresh work
     ///   phase with the same goal. Music carries over so playback isn't restarted.
     func run(workEnd: TimeInterval, breakEnd: TimeInterval) {
-        if plan.block { effects.applyBlock() }
+        // Resuming into a break (`pomodoro resume` on a session paused while
+        // resting) hands us a work deadline that is already behind us. That
+        // work phase ran, and was recorded, before the pause — replaying it
+        // here would re-apply the block for an instant and append a phantom
+        // history line ending before it started. Skip straight to the rest.
+        var skippingWorkPhase = effects.now >= workEnd
+
+        if plan.block, !skippingWorkPhase { effects.applyBlock() }
         if let station = plan.station { effects.startMusic(station) }
 
         var currentWorkEnd = workEnd
         var currentBreakEnd = breakEnd
 
         while true {
-            effects.sleep(until: currentWorkEnd)
+            if !skippingWorkPhase {
+                effects.sleep(until: currentWorkEnd)
 
-            // One history line per finished work phase. `session.current`
-            // still holds this phase's record until the loop rolls the next
-            // one, so its startedAt/workEnd bracket exactly what was worked.
-            if let history, let cur = session.current {
-                history.append(SessionHistory.Entry(
-                    goal: cur.goal,
-                    startedAt: cur.startedAt,
-                    endedAt: min(effects.now, cur.workEnd),
-                    longBreak: cur.isLongBreak,
-                    completed: true
-                ))
+                // One history line per finished work phase. `session.current`
+                // still holds this phase's record until the loop rolls the next
+                // one, so its startedAt/workEnd bracket exactly what was worked.
+                if let history, let cur = session.current {
+                    history.append(SessionHistory.Entry(
+                        goal: cur.goal,
+                        startedAt: cur.startedAt,
+                        endedAt: min(effects.now, cur.workEnd),
+                        longBreak: cur.isLongBreak,
+                        completed: true
+                    ))
+                }
+
+                // Stop-after-set: when cycling is on and the user opted to stop at
+                // each set boundary (every Nth session — the same cadence that earns
+                // the long break), end here without taking the final break. Clean up
+                // as a normal stop, then leave a terminal marker so the menu bar app
+                // posts the "start another set" notification.
+                let atWorkEnd = effects.cadence
+                if atWorkEnd.keepCycling, atWorkEnd.stopAfterSet,
+                   let prev = session.current,
+                   session.hasLongBreak(sessionNumber: prev.sessionNumber,
+                                        every: atWorkEnd.sessionsBeforeLongBreak) {
+                    Self.endSession(unblock: plan.block, clearing: session, effects: effects)
+                    Self.save(session.completedSet(from: prev, at: effects.now),
+                              to: session, what: "set-complete marker")
+                    return
+                }
+
+                // Entering the break: lift the block so the user can browse freely
+                // while resting. Re-applied when the next work phase begins.
+                if plan.block { effects.removeBlock() }
             }
-
-            // Stop-after-set: when cycling is on and the user opted to stop at
-            // each set boundary (every Nth session — the same cadence that earns
-            // the long break), end here without taking the final break. Clean up
-            // as a normal stop, then leave a terminal marker so the menu bar app
-            // posts the "start another set" notification.
-            let atWorkEnd = effects.cadence
-            if atWorkEnd.keepCycling, atWorkEnd.stopAfterSet,
-               let prev = session.current,
-               session.hasLongBreak(sessionNumber: prev.sessionNumber,
-                                    every: atWorkEnd.sessionsBeforeLongBreak) {
-                Self.endSession(unblock: plan.block, clearing: session, effects: effects)
-                Self.save(session.completedSet(from: prev, at: effects.now),
-                          to: session, what: "set-complete marker")
-                return
-            }
-
-            // Entering the break: lift the block so the user can browse freely
-            // while resting. Re-applied when the next work phase begins.
-            if plan.block { effects.removeBlock() }
+            // Only the first pass can inherit a spent work deadline.
+            skippingWorkPhase = false
 
             effects.sleep(until: currentBreakEnd)
 

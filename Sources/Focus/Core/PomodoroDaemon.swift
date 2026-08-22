@@ -53,11 +53,18 @@ enum PomodoroDaemon {
         }
 
         let now = Date().timeIntervalSince1970
+        // Bank the focus earned so far, while the record still reads as
+        // running. `resume` restarts `startedAt` so the pause gap never counts
+        // as focus — which also means the minutes before the pause belong to
+        // no later entry. This partial is the only thing that keeps them, and
+        // it is disjoint from the entry the resumed phase writes.
+        SessionRunner.recordPartialIfNeeded(clearing: session, now: now)
         let frozen = session.paused(current, at: now)
         // Mark the file BEFORE signalling so the dying daemon's partial-history
-        // recorder sees the pause and skips it. The daemon sleeps mid-phase and
-        // writes only at boundaries, so nothing races this write; its teardown
-        // then clears the file, which we re-save below once it's gone.
+        // recorder sees the pause and skips it — the line above already covers
+        // this phase. The daemon sleeps mid-phase and writes only at
+        // boundaries, so nothing races this write; its teardown then clears the
+        // file, which we re-save below once it's gone.
         try? session.save(frozen)
         if current.pid > 0, isOurProcess(pid: current.pid, expectedStart: current.startedAt) {
             _ = kill(current.pid, SIGTERM)
