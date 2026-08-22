@@ -138,10 +138,20 @@ struct LiveSessionEffects: SessionEffects {
     var now: TimeInterval { Date().timeIntervalSince1970 }
     var cadence: PomodoroCadence { .fromSettings }
 
+    /// Sleep to an absolute wall-clock deadline.
+    ///
+    /// Sliced rather than one long `Thread.sleep` because that call measures
+    /// uptime, which freezes while a Mac sleeps: close the lid mid-work-phase
+    /// and the single sleep would keep counting after wake, firing the
+    /// work→break transition minutes late while the menu bar (wall-clock
+    /// derived) already shows the break. Recomputing the remainder every five
+    /// seconds bounds any such drift to one slice.
     func sleep(until deadline: TimeInterval) {
-        let remaining = deadline - now
-        if remaining > 0 {
-            Thread.sleep(forTimeInterval: remaining)
+        let slice: TimeInterval = 5
+        while true {
+            let remaining = deadline - now
+            guard remaining > 0 else { return }
+            Thread.sleep(forTimeInterval: min(remaining, slice))
         }
     }
 
