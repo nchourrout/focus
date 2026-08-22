@@ -77,16 +77,37 @@ enum LocalPlayback {
         // Become our own session/process group so the outer `killpg` cleanly takes out
         // both this wrapper and its current afplay child.
         _ = Darwin.setsid()
+        // A degenerate file (truncated, zero-length) can make afplay exit 0
+        // immediately; looping on that would tight-spin the CPU. Five instant
+        // "successes" in a row mean the file never actually plays — give up,
+        // leaving the stale PID file to age out honestly in the menu bar.
+        let quickExitWindow = 0.5
+        let maxQuickExits = 5
+        var quickExits = 0
         // Default SIGTERM terminates the process; afplay child receives it too via the group.
         while true {
+            let startedAt = Date().timeIntervalSince1970
             let result = Shell.run(Shell.Command(path: "/usr/bin/afplay", [file], captureStderr: true))
-            guard result.status != 0 else { continue }
-            // Missing file, bad format, or SIGTERM. Detached process, so the log
-            // is the only place this can be seen.
-            Log.playback.notice(
-                "afplay loop ended (status \(result.status, privacy: .public)): \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines), privacy: .public)"
-            )
-            return
+            let elapsed = Date().timeIntervalSince1970 - startedAt
+            if result.status != 0 {
+                // Missing file, bad format, or SIGTERM. Detached process, so the log
+                // is the only place this can be seen.
+                Log.playback.notice(
+                    "afplay loop ended (status \(result.status, privacy: .public)): \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines), privacy: .public)"
+                )
+                return
+            }
+            if elapsed > quickExitWindow {
+                quickExits = 0
+                continue
+            }
+            quickExits += 1
+            guard quickExits < maxQuickExits else {
+                Log.playback.error(
+                    "afplay exited instantly \(maxQuickExits, privacy: .public)x for \(file, privacy: .public); not looping further"
+                )
+                return
+            }
         }
     }
 
