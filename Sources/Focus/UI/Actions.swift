@@ -134,9 +134,10 @@ enum Actions {
 
     /// Same as `spawn` but routes through `sudo -n`. Requires the sudoers drop-in.
     /// Uses `onExit` (event-driven, no thread parking) to detect sudo failures and
-    /// surface an alert, so the user understands why the menu action appeared to
-    /// do nothing.
-    private static func spawnSudo(_ args: [String]) {
+    /// surface an alert, so the user understands why the action appeared to
+    /// do nothing. Shared with `AppState`'s dead-daemon recovery, which unblocks
+    /// on the user's behalf after cleaning up a crashed session.
+    static func spawnSudo(_ args: [String]) {
         do {
             let handle = try Shell.spawn(Shell.Command(Paths.selfExecutable, args, sudo: true))
             handle.onExit { status, _ in

@@ -23,6 +23,10 @@ final class AppState: ObservableObject {
     /// a running session (the daemon survived an app restart) and we shouldn't
     /// fire "Pomodoro started" against a session that began ages ago.
     private var hasAppliedOnce = false
+    /// Confirms dead-daemon sightings across consecutive ticks; see its type
+    /// for why one sighting isn't enough. Lives on the main actor, which is
+    /// also where the (cheap) liveness probe runs.
+    private var staleDetector = StaleSessionDetector()
 
     init() {
         Task { await refresh() }
@@ -87,6 +91,41 @@ final class AppState: ObservableObject {
             pomodoro = nil
             phase = .done
             return
+        }
+
+        // Dead-daemon recovery: a state file whose pid no longer belongs to a
+        // live Focus daemon is what a crash, `kill -9`, or a reboot leaves
+        // behind. Left alone it shows as a phantom countdown forever, and a
+        // crash mid-work-phase keeps the /etc/hosts block on with nothing to
+        // lift it. The detector demands two consecutive sightings so a normal
+        // `pomodoro stop` (which clears the file itself, up to ~1s after the
+        // daemon dies) never trips this path. Recovery mirrors set-complete:
+        // always clear and unblock, but stay quiet when the leftover predates
+        // this launch — that session ended while the app was closed.
+        var state = state
+        if let s = state,
+           staleDetector.confirmStale(s, liveness: { isOurProcess(pid: $0, expectedStart: $1) }) {
+            PomodoroSession.default.clear()
+            // Lift the block only when this run owned one AND the markers are
+            // still in /etc/hosts: a manual unblock during the gap makes the
+            // sudo call pointless, and --no-block sessions never had one.
+            if s.block && newBlock {
+                Actions.spawnSudo(["unblock"])
+            }
+            if wasApplied {
+                LocalNotifications.post(
+                    title: "Session interrupted",
+                    body: "Focus cleaned up a pomodoro that ended unexpectedly.",
+                    sound: nil
+                )
+                Sounds.play(.sessionEnd)
+            }
+            Log.actions.notice(
+                "recovered stale session (pid \(s.pid), goal \(s.goal, privacy: .public))"
+            )
+            state = nil
+        } else if state == nil {
+            staleDetector.reset()
         }
 
         let prevPomodoro = pomodoro
