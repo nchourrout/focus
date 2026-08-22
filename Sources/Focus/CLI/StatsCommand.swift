@@ -21,9 +21,8 @@ struct StatsCommand: ParsableCommand {
     func run() {
         let entries = SessionHistory.default.entries()
         let now = Date().timeIntervalSince1970
-        let dayStart = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
 
-        let today = SessionHistory.totals(since: dayStart, in: entries)
+        let today = SessionHistory.todayTotals(in: entries)
         let window = SessionHistory.totals(since: now - Double(days) * 86_400, in: entries)
 
         print("focus: today \(today.describe()) across \(today.sessions) sessions")

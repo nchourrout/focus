@@ -19,13 +19,14 @@ struct SiteBlock {
     let hostsURL: URL
     let backupURL: URL
     let dnsFlush: () -> Void
-    /// Advisory lock path for the mutation cycle. Nil runs unlocked (sandbox
-    /// tests); production locks `Paths.hostsLockPath` so a daemon applying the
-    /// block at a phase boundary can't interleave with a manual toggle.
-    private let lockPath: String?
+    /// Advisory lock path for the mutation cycle, so a daemon applying the
+    /// block at a phase boundary can't interleave with a manual toggle. Tests
+    /// point it at a tmp file; `FileLock` already degrades to running unlocked
+    /// when the path turns out to be unusable.
+    private let lockPath: String
 
     init(hostsURL: URL, backupURL: URL, dnsFlush: @escaping () -> Void,
-         lockPath: String? = Paths.hostsLockPath) {
+         lockPath: String = Paths.hostsLockPath) {
         self.hostsURL = hostsURL
         self.backupURL = backupURL
         self.dnsFlush = dnsFlush
@@ -166,8 +167,7 @@ struct SiteBlock {
     }
 
     private func withHostsLock<T>(_ body: () throws -> T) rethrows -> T {
-        guard let lockPath else { return try body() }
-        return try FileLock(path: lockPath).withExclusiveLock(body)
+        try FileLock(path: lockPath).withExclusiveLock(body)
     }
 
     private func read() throws -> String {

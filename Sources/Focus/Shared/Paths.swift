@@ -25,22 +25,21 @@ enum Paths {
         Bundle.module.url(forResource: "block", withExtension: "txt")
     }
 
-    /// User-writable block list at ~/Library/Application Support/Focus/block.txt.
+    /// ~/Library/Application Support/Focus, the one directory Focus writes to.
     /// Resolved against the login user's home (NSHomeDirectoryForUser) so that
-    /// running under sudo doesn't steer the path into /var/root.
-    static var userBlockList: URL {
+    /// running under sudo doesn't steer the path into /var/root — everything
+    /// below derives from here so no new file can miss that.
+    static var appSupport: URL {
         let home = NSHomeDirectoryForUser(NSUserName()) ?? NSHomeDirectory()
         return URL(fileURLWithPath: home)
-            .appendingPathComponent("Library/Application Support/Focus/block.txt")
+            .appendingPathComponent("Library/Application Support/Focus")
     }
 
-    /// Append-only log of finished work sessions, next to block.txt so both
-    /// live under the same Application Support directory.
-    static var history: URL {
-        let home = NSHomeDirectoryForUser(NSUserName()) ?? NSHomeDirectory()
-        return URL(fileURLWithPath: home)
-            .appendingPathComponent("Library/Application Support/Focus/history.jsonl")
-    }
+    /// User-writable block list.
+    static var userBlockList: URL { appSupport.appendingPathComponent("block.txt") }
+
+    /// Append-only log of finished work sessions.
+    static var history: URL { appSupport.appendingPathComponent("history.jsonl") }
 
     /// Absolute path to the running executable, used to re-invoke ourselves.
     ///

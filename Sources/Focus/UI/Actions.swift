@@ -58,13 +58,13 @@ enum Actions {
     /// Single-shortcut affordance: stop if a session is running, resume if one
     /// is paused, otherwise prompt for a goal and start.
     static func togglePomodoro() {
-        if PomodoroSession.default.current?.pausedAt != nil {
-            resumePomodoro()
-        } else if PomodoroSession.default.current != nil {
-            stopPomodoro()
-        } else {
+        // One read: two would let the daemon write between them and route a
+        // record that no longer exists to stopPomodoro.
+        guard let current = PomodoroSession.default.current else {
             promptAndStartPomodoro()
+            return
         }
+        if current.pausedAt != nil { resumePomodoro() } else { stopPomodoro() }
     }
 
     // MARK: Block

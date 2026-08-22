@@ -18,13 +18,17 @@ import Darwin
     }
 
     /// flock conflicts across independent open file descriptions even within
-    /// one process, so a nested acquisition stands in for the second writer.
+    /// one process, so a second descriptor opened inside the held lock stands
+    /// in for the competing writer.
     @Test func aHeldLockExcludesAnIndependentAcquisition() throws {
-        let lock = FileLock(path: try makePath())
-        let inner = try lock.withExclusiveLock {
-            try lock.tryExclusiveLock { "ran" }
+        let path = try makePath()
+        let lock = FileLock(path: path)
+        let excluded = try lock.withExclusiveLock { () -> Bool in
+            let fd = open(path, O_RDWR | O_CREAT, 0o644)
+            defer { close(fd) }
+            return flock(fd, LOCK_EX | LOCK_NB) != 0
         }
-        #expect(inner == nil, "a held exclusive lock must exclude another description")
+        #expect(excluded, "a held exclusive lock must exclude another description")
     }
 
     @Test func releasedLockIsReacquirable() throws {
@@ -39,7 +43,6 @@ import Darwin
         // losing the ability to unblock /etc/hosts would be worse than the
         // narrow race this lock closes.
         let lock = FileLock(path: "/nonexistent-focus-test-dir/lock")
-        #expect(try lock.tryExclusiveLock { "ran" } == "ran")
         #expect(try lock.withExclusiveLock { "ran" } == "ran")
     }
 

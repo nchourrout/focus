@@ -127,23 +127,19 @@ struct StatusLabel: View {
                 CountdownText(pomodoro: pomodoro)
             }
         } else if let paused = state.pausedSession {
-            // Frozen countdown: the remaining seconds derive from the stored
-            // deadlines minus the pause instant, which doesn't move.
             HStack(spacing: 4) {
                 Image(systemName: "pause.fill")
-                Text(formatCountdown(frozenRemaining(of: paused)))
-                    .monospacedDigit()
+                // The remaining seconds derive from the same phase rule the
+                // live countdown uses, read at the pause instant, which
+                // doesn't move.
+                Text(formatCountdown(
+                    PomodoroSession.default.phase(of: paused, at: paused.pausedAt ?? 0).timeLeft
+                ))
+                .monospacedDigit()
             }
         } else {
             Image(systemName: state.blockActive ? "nosign" : "circle.dashed")
         }
-    }
-
-    /// Seconds left in the paused phase, frozen at the moment of pausing.
-    private func frozenRemaining(of paused: PomodoroSession.Active) -> TimeInterval {
-        guard let at = paused.pausedAt else { return 0 }
-        let deadline = at < paused.workEnd ? paused.workEnd : paused.breakEnd
-        return max(0, deadline - at)
     }
 }
 

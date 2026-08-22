@@ -63,13 +63,7 @@ struct SessionRunner {
         guard active.pausedAt == nil else { return }
         guard session.phase(of: active, at: now).phase == .work else { return }
         guard !history.isAlreadyRecorded(startedAt: active.startedAt, goal: active.goal) else { return }
-        history.append(SessionHistory.Entry(
-            goal: active.goal,
-            startedAt: active.startedAt,
-            endedAt: min(now, active.workEnd),
-            longBreak: active.isLongBreak,
-            completed: false
-        ))
+        history.append(SessionHistory.Entry(workPhaseOf: active, endedAt: now, completed: false))
     }
 
     /// Write state, and say so when it doesn't take. A failed save leaves the
@@ -115,16 +109,16 @@ struct SessionRunner {
             if !skippingWorkPhase {
                 effects.sleep(until: currentWorkEnd)
 
-                // One history line per finished work phase. `session.current`
-                // still holds this phase's record until the loop rolls the next
-                // one, so its startedAt/workEnd bracket exactly what was worked.
-                if let history, let cur = session.current {
+                // Read once and share: the file still holds this phase's record
+                // until the loop rolls the next one, and both consumers below
+                // should see the same instant of it.
+                let finished = session.current
+
+                // One history line per finished work phase — its startedAt and
+                // workEnd bracket exactly what was worked.
+                if let history, let cur = finished {
                     history.append(SessionHistory.Entry(
-                        goal: cur.goal,
-                        startedAt: cur.startedAt,
-                        endedAt: min(effects.now, cur.workEnd),
-                        longBreak: cur.isLongBreak,
-                        completed: true
+                        workPhaseOf: cur, endedAt: effects.now, completed: true
                     ))
                 }
 
@@ -135,7 +129,7 @@ struct SessionRunner {
                 // posts the "start another set" notification.
                 let atWorkEnd = effects.cadence
                 if atWorkEnd.keepCycling, atWorkEnd.stopAfterSet,
-                   let prev = session.current,
+                   let prev = finished,
                    session.hasLongBreak(sessionNumber: prev.sessionNumber,
                                         every: atWorkEnd.sessionsBeforeLongBreak) {
                     Self.endSession(unblock: plan.block, clearing: session, effects: effects)

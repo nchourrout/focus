@@ -28,16 +28,4 @@ struct FileLock {
         return try body()
     }
 
-    /// Non-blocking variant for tests: nil means someone else held the lock.
-    /// Same best-effort degradation when the lock file itself is unusable.
-    func tryExclusiveLock<T>(_ body: () throws -> T) rethrows -> T? {
-        let fd = open(path, O_RDWR | O_CREAT, 0o644)
-        guard fd >= 0 else { return try body() }
-        defer {
-            flock(fd, LOCK_UN)
-            close(fd)
-        }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return nil }
-        return try body()
-    }
 }

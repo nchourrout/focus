@@ -17,9 +17,8 @@ struct SessionHistory {
         let goal: String
         let startedAt: TimeInterval
         let endedAt: TimeInterval
-        /// Minutes of focus this entry represents, rounded down. Stored so the
-        /// file stays human-greppable, not just machine-parsed.
-        let minutes: Int
+        /// Minutes of focus this entry represents, rounded down. Derived, but
+        /// still written to the file so it stays human-greppable.
         /// Whether the break that followed earned the long-break cadence.
         let longBreak: Bool
         /// False only for entries written when a run was stopped mid-work-phase.
@@ -33,24 +32,38 @@ struct SessionHistory {
             case completed
         }
 
+        var minutes: Int { max(0, Int((endedAt - startedAt) / 60)) }
+
         init(goal: String, startedAt: TimeInterval, endedAt: TimeInterval,
              longBreak: Bool, completed: Bool) {
             self.goal = goal
             self.startedAt = startedAt
             self.endedAt = endedAt
-            self.minutes = max(0, Int((endedAt - startedAt) / 60))
             self.longBreak = longBreak
             self.completed = completed
         }
 
-        /// Decoding needs its own path because `minutes` is derived, not stored
-        /// by callers — recompute from the timestamps and ignore any stored value.
+        /// The line a work phase earns: `active`'s own bracket, ending at `at`
+        /// clamped to the phase deadline so a teardown that runs a moment late
+        /// can't bank minutes the phase never had.
+        init(workPhaseOf active: PomodoroSession.Active,
+             endedAt at: TimeInterval, completed: Bool) {
+            self.init(
+                goal: active.goal,
+                startedAt: active.startedAt,
+                endedAt: min(at, active.workEnd),
+                longBreak: active.isLongBreak,
+                completed: completed
+            )
+        }
+
+        /// Decoding needs its own path because `minutes` is derived — ignore
+        /// whatever the file stored for it.
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             goal = try c.decode(String.self, forKey: .goal)
             startedAt = try c.decode(TimeInterval.self, forKey: .startedAt)
             endedAt = try c.decode(TimeInterval.self, forKey: .endedAt)
-            minutes = max(0, Int((endedAt - startedAt) / 60))
             longBreak = try c.decodeIfPresent(Bool.self, forKey: .longBreak) ?? false
             completed = try c.decodeIfPresent(Bool.self, forKey: .completed) ?? true
         }
@@ -91,8 +104,9 @@ struct SessionHistory {
     /// hand-edited line is skipped rather than poisoning the whole log.
     func entries() -> [Entry] {
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        let decoder = JSONDecoder()
         return raw.split(separator: "\n").compactMap {
-            try? JSONDecoder().decode(Entry.self, from: Data($0.utf8))
+            try? decoder.decode(Entry.self, from: Data($0.utf8))
         }
     }
 
@@ -100,7 +114,10 @@ struct SessionHistory {
     /// log. Guards the stop() teardown path against double-recording when it
     /// races the runner's own boundary write.
     func isAlreadyRecorded(startedAt: TimeInterval, goal: String) -> Bool {
-        entries().contains { $0.startedAt == startedAt && $0.goal == goal && $0.completed }
+        // Reversed: the line this races is by definition the last one appended.
+        entries().reversed().contains {
+            $0.startedAt == startedAt && $0.goal == goal && $0.completed
+        }
     }
 
     // MARK: Aggregation (pure)
@@ -118,6 +135,13 @@ struct SessionHistory {
             case let (h, m): return "\(h)h \(m)m"
             }
         }
+    }
+
+    /// Totals for the user's calendar day. Defined here rather than at each
+    /// caller so the CLI's `focus stats` and the menu's Today line can't drift
+    /// apart on what "today" starts at.
+    static func todayTotals(in entries: [Entry], now: Date = Date()) -> Totals {
+        totals(since: Calendar.current.startOfDay(for: now).timeIntervalSince1970, in: entries)
     }
 
     /// Sessions and focused minutes since `cutoff`. Partial entries count

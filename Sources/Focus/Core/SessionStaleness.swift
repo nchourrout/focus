@@ -15,8 +15,12 @@ enum SessionStaleness {
     /// Liveness is injected so the decision is testable without a process
     /// table; production passes `isOurProcess(pid:expectedStart:)`, whose start-
     /// time comparison is what rules out PID recycling.
-    static func isStale(_ active: PomodoroSession.Active,
-                        liveness: (_ pid: Int32, _ startedAt: TimeInterval) -> Bool) -> Bool {
+    static func isStale(
+        _ active: PomodoroSession.Active,
+        liveness: (_ pid: Int32, _ startedAt: TimeInterval) -> Bool = {
+            isOurProcess(pid: $0, expectedStart: $1)
+        }
+    ) -> Bool {
         if active.pausedAt != nil { return false }
         guard active.pid > 0 else { return true }
         return !liveness(active.pid, active.startedAt)
@@ -39,7 +43,9 @@ struct StaleSessionDetector {
     /// read or absent file resets the count.
     mutating func confirmStale(
         _ active: PomodoroSession.Active?,
-        liveness: (_ pid: Int32, _ startedAt: TimeInterval) -> Bool
+        liveness: (_ pid: Int32, _ startedAt: TimeInterval) -> Bool = {
+            isOurProcess(pid: $0, expectedStart: $1)
+        }
     ) -> Bool {
         guard let active, SessionStaleness.isStale(active, liveness: liveness) else {
             pendingStalePID = nil
@@ -47,10 +53,5 @@ struct StaleSessionDetector {
         }
         defer { pendingStalePID = active.pid }
         return pendingStalePID == active.pid
-    }
-
-    /// Drop any half-confirmed sighting.
-    mutating func reset() {
-        pendingStalePID = nil
     }
 }

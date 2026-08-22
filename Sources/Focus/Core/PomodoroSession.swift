@@ -59,6 +59,14 @@ struct PomodoroSession {
         /// partial-history recording, and dead-daemon recovery all skip it.
         var pausedAt: TimeInterval?
 
+        /// The run's work/break lengths, with the pre-schema fallback applied
+        /// once. Files predating `work_minutes`/`break_minutes` decode as nil;
+        /// resolving to current Settings here reproduces exactly what those
+        /// runs did, and keeps the migration rule in one place instead of at
+        /// every command that acts mid-run.
+        var effectiveWorkMinutes: Int { workMinutes ?? Defaults.workMinutes }
+        var effectiveBreakMinutes: Int { breakMinutes ?? Defaults.breakMinutes }
+
         enum CodingKeys: String, CodingKey {
             case goal, pid, music, block
             case startedAt = "started_at"

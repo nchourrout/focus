@@ -64,10 +64,13 @@ struct MenuContent: View {
         }
         .keyboardShortcut(",")
         .onAppear {
-            let dayStart = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
-            todaysFocus = SessionHistory.totals(
-                since: dayStart, in: SessionHistory.default.entries()
-            )
+            // Off the main thread: the log is append-only and unbounded, so
+            // parsing it inline would stall the menu for longer every month.
+            Task {
+                todaysFocus = await Task.detached {
+                    SessionHistory.todayTotals(in: SessionHistory.default.entries())
+                }.value
+            }
         }
 
         Button("Quit Focus") { NSApp.terminate(nil) }

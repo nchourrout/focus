@@ -107,8 +107,9 @@ final class AppState: ObservableObject {
         // always clear and unblock, but stay quiet when the leftover predates
         // this launch — that session ended while the app was closed.
         var state = state
-        if let s = state,
-           staleDetector.confirmStale(s, liveness: { isOurProcess(pid: $0, expectedStart: $1) }) {
+        // `confirmStale` takes the optional itself and clears its own counter on
+        // any absent or healthy read, so this is the one place a tick feeds it.
+        if staleDetector.confirmStale(state), let s = state {
             PomodoroSession.default.clear()
             // Lift the block only when this run owned one AND the markers are
             // still in /etc/hosts: a manual unblock during the gap makes the
@@ -128,8 +129,6 @@ final class AppState: ObservableObject {
                 "recovered stale session (pid \(s.pid), goal \(s.goal, privacy: .public))"
             )
             state = nil
-        } else if state == nil {
-            staleDetector.reset()
         }
 
         let wasPaused = pausedSession != nil
@@ -138,9 +137,11 @@ final class AppState: ObservableObject {
         // probe or recover. Publish the record for the Resume affordances and
         // settle everything else to idle until `resume` spawns a fresh daemon.
         if let s = state, s.pausedAt != nil {
-            staleDetector.reset()
             if pomodoro != nil { pomodoro = nil }
-            phase = .done
+            // Guarded like every other publish here: an unguarded assignment
+            // fires objectWillChange on all 1 Hz ticks of the pause, re-rendering
+            // the menu bar for the whole time the session sits frozen.
+            if phase != .done { phase = .done }
             if pausedSession != s { pausedSession = s }
             return
         }

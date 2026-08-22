@@ -11,6 +11,12 @@ enum PomodoroDaemon {
     static func launch(_ plan: PomodoroPlan) throws {
         let session = PomodoroSession.default
         if let existing = session.current {
+            // A paused record has no live daemon by design, so the liveness probe
+            // below would read it as leftover and silently discard a session the
+            // user means to come back to.
+            if existing.pausedAt != nil {
+                throw CLIError.alreadyPaused
+            }
             // Verify the PID is both alive *and* actually our daemon, to guard against
             // PID recycling (a long-running process reusing the dead daemon's PID).
             if isOurProcess(pid: existing.pid, expectedStart: existing.startedAt) {
@@ -27,7 +33,7 @@ enum PomodoroDaemon {
         let first = session.firstSession(
             plan: plan, cadence: .fromSettings, pid: 0, at: now
         )
-        try spawn(active: first, workMinutes: plan.workMinutes, breakMinutes: plan.breakMinutes)
+        try spawn(active: first)
 
         print("focus: pomodoro started — \(plan.workMinutes)min work, \(plan.breakMinutes)min break — \(plan.goal)")
     }
@@ -38,7 +44,7 @@ enum PomodoroDaemon {
     static func pause() {
         let session = PomodoroSession.default
         guard let current = session.current,
-              !SessionStaleness.isStale(current, liveness: { isOurProcess(pid: $0, expectedStart: $1) })
+              !SessionStaleness.isStale(current)
         else {
             print("focus: no pomodoro running")
             return
@@ -66,13 +72,7 @@ enum PomodoroDaemon {
         // boundaries, so nothing races this write; its teardown then clears the
         // file, which we re-save below once it's gone.
         try? session.save(frozen)
-        if current.pid > 0, isOurProcess(pid: current.pid, expectedStart: current.startedAt) {
-            _ = kill(current.pid, SIGTERM)
-            for _ in 0..<10 {
-                usleep(100_000)
-                if !isPIDAlive(current.pid) { break }
-            }
-        }
+        terminateDaemon(current)
         // Belt for a daemon that lost the signal race, mirroring stop().
         SessionRunner.endSession(unblock: current.block, clearing: session,
                                  effects: LiveSessionEffects())
@@ -84,7 +84,9 @@ enum PomodoroDaemon {
     /// gap and spawn a fresh daemon for them.
     static func resume() throws {
         let session = PomodoroSession.default
-        guard let paused = session.current, paused.pausedAt != nil else {
+        // `resumed` returns nil for anything that isn't paused, which is the
+        // same condition the message describes — one guard covers both.
+        guard let paused = session.current, let resumed = session.resumed(paused) else {
             print("focus: no paused pomodoro")
             return
         }
@@ -92,15 +94,7 @@ enum PomodoroDaemon {
             print("focus: pomodoro daemon unexpectedly alive; stop it before resuming")
             return
         }
-        // Unreachable when the guard above passed; kept as a guard so the
-        // compiler sees a real path instead of an optional.
-        guard let resumed = session.resumed(paused) else {
-            print("focus: no paused pomodoro")
-            return
-        }
-        let workMinutes = resumed.workMinutes ?? Defaults.workMinutes
-        let breakMinutes = resumed.breakMinutes ?? Defaults.breakMinutes
-        try spawn(active: resumed, workMinutes: workMinutes, breakMinutes: breakMinutes)
+        try spawn(active: resumed)
         print("focus: pomodoro resumed")
     }
 
@@ -113,7 +107,7 @@ enum PomodoroDaemon {
     static func skipBreak() throws {
         let session = PomodoroSession.default
         guard let current = session.current,
-              !SessionStaleness.isStale(current, liveness: { isOurProcess(pid: $0, expectedStart: $1) })
+              !SessionStaleness.isStale(current)
         else {
             print("focus: no pomodoro running")
             return
@@ -122,14 +116,11 @@ enum PomodoroDaemon {
             print("focus: not in a break — skip only works while resting")
             return
         }
-        // Stored plan minutes; nil on files predating the field, falling back
-        // to current Settings exactly as pre-schema runs would have.
-        let workMinutes = current.workMinutes ?? Defaults.workMinutes
-        let breakMinutes = current.breakMinutes ?? Defaults.breakMinutes
         let cadence = PomodoroCadence.fromSettings
         let next = session.nextSession(
             after: current,
-            workMinutes: workMinutes, breakMinutes: breakMinutes,
+            workMinutes: current.effectiveWorkMinutes,
+            breakMinutes: current.effectiveBreakMinutes,
             longBreakMinutes: cadence.longBreakMinutes,
             sessionsBeforeLongBreak: cadence.sessionsBeforeLongBreak,
             at: Date().timeIntervalSince1970
@@ -138,35 +129,45 @@ enum PomodoroDaemon {
         // Stop the old daemon. Its SIGTERM handler tears down the block (a
         // no-op mid-break) and playback; the replacement restarts the same
         // station, so skipping costs one short stream gap.
-        if current.pid > 0, isOurProcess(pid: current.pid, expectedStart: current.startedAt) {
-            _ = kill(current.pid, SIGTERM)
-            for _ in 0..<10 {
-                usleep(100_000)
-                if !isPIDAlive(current.pid) { break }
-            }
-        }
+        terminateDaemon(current)
         // Belt for a daemon that lost the signal race (same as stop()).
         SessionRunner.endSession(unblock: current.block, clearing: session,
                                  effects: LiveSessionEffects())
-        try spawn(active: next, workMinutes: workMinutes, breakMinutes: breakMinutes)
+        try spawn(active: next)
         print("focus: break skipped — starting session \(next.sessionNumber)")
+    }
+
+    /// SIGTERM the daemon behind `state` and wait up to a second for it to go.
+    ///
+    /// Only signal if the PID is still ours; skip if the PID has been recycled.
+    /// The `pid > 0` check is a defensive belt: `kill(0, SIGTERM)` would signal
+    /// every process in our process group. Callers follow this with their own
+    /// `endSession` belt for a daemon that lost the signal race.
+    private static func terminateDaemon(_ state: PomodoroSession.Active) {
+        guard state.pid > 0,
+              isOurProcess(pid: state.pid, expectedStart: state.startedAt) else { return }
+        _ = kill(state.pid, SIGTERM)
+        for _ in 0..<10 {
+            usleep(100_000)
+            if !isPIDAlive(state.pid) { break }
+        }
     }
 
     /// Fork the detached `_pomodoro-run` child for `active` and write the state
     /// file once, with the real PID. Spawn-before-save ordering matters:
     /// writing a placeholder state beforehand opened a window where
     /// `pomodoro stop` could see pid=0, skip the signal, and leak the daemon.
-    /// Shared by launch and skipBreak.
-    @discardableResult
-    private static func spawn(active: PomodoroSession.Active,
-                              workMinutes: Int, breakMinutes: Int) throws -> Int32 {
+    /// Shared by launch, skipBreak and resume; the plan minutes come off the
+    /// record itself, so a caller can't hand the child deadlines that disagree
+    /// with the state file it is about to write.
+    private static func spawn(active: PomodoroSession.Active) throws {
         var args = [
             "_pomodoro-run",
             "--goal", active.goal,
             "--work-end", String(active.workEnd),
             "--break-end", String(active.breakEnd),
-            "--work-minutes", String(workMinutes),
-            "--break-minutes", String(breakMinutes),
+            "--work-minutes", String(active.effectiveWorkMinutes),
+            "--break-minutes", String(active.effectiveBreakMinutes),
         ]
         if let uri = active.music {
             args.append(contentsOf: ["--music", uri])
@@ -177,7 +178,6 @@ enum PomodoroDaemon {
         var started = active
         started.pid = handle.pid
         try PomodoroSession.default.save(started)
-        return handle.pid
     }
 
     /// Body of the hidden `_pomodoro-run` subcommand. Runs in the detached child
@@ -218,16 +218,7 @@ enum PomodoroDaemon {
             print("focus: no pomodoro running")
             return
         }
-        // Only signal if the PID is still ours; skip if the PID has been recycled.
-        // The `pid > 0` check is a defensive belt: `kill(0, SIGTERM)` would signal
-        // every process in our process group.
-        if state.pid > 0, isOurProcess(pid: state.pid, expectedStart: state.startedAt) {
-            _ = kill(state.pid, SIGTERM)
-            for _ in 0..<10 {
-                usleep(100_000)
-                if !isPIDAlive(state.pid) { break }
-            }
-        }
+        terminateDaemon(state)
         // The daemon now cleans up on SIGTERM itself; this is still the fallback
         // for a daemon that ignored or lost the race, and it's what clears the
         // state when the pid was recycled. Idempotent against signalCleanup.
@@ -276,6 +267,7 @@ enum PomodoroDaemon {
 
 enum CLIError: Error, LocalizedError {
     case alreadyRunning
+    case alreadyPaused
     case notRoot
     case emptyBlockList(URL)
     case missingFile(URL)
@@ -287,6 +279,8 @@ enum CLIError: Error, LocalizedError {
         switch self {
         case .alreadyRunning:
             return "a pomodoro is already running. Stop it first."
+        case .alreadyPaused:
+            return "a pomodoro is paused. Resume it, or stop it first."
         case .notRoot:
             return "this command needs sudo (it writes /etc/hosts)"
         case .emptyBlockList(let url):
