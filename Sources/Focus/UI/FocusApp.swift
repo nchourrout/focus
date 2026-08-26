@@ -81,9 +81,10 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
 
     /// Cleanly tear down anything that would otherwise outlive the menu bar app:
     /// a running pomodoro daemon (it handles its own block/music cleanup based on
-    /// the session's `block` flag) and a standalone /etc/hosts block left active
-    /// by a manual toggle. Both calls are synchronous; macOS gives apps several
-    /// seconds during termination.
+    /// the session's `block` flag), any playback still running on its own, and a
+    /// standalone /etc/hosts block left active by a manual toggle. All three
+    /// calls are synchronous; macOS gives apps several seconds during
+    /// termination.
     ///
     /// If the sudoers drop-in is missing, the unblock can't run — we log to
     /// Unified Logging instead of silently leaving the user blocked without a
@@ -93,6 +94,12 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         if PomodoroSession.default.current != nil {
             PomodoroDaemon.stop()
         }
+        // Playback lives in a detached, setsid'd subprocess, so it keeps going
+        // after we exit unless it is killed by PID. The teardown above already
+        // covers music the daemon started; this one covers music started on its
+        // own from the menu bar (or the CLI), and is a no-op when the PID file
+        // is already gone.
+        LocalPlayback.stop()
         if SiteBlock.default.isActive {
             guard SudoersInstaller.isInstalled else {
                 Log.terminate.warning("block still active on quit; sudoers drop-in missing, leaving /etc/hosts as-is")
