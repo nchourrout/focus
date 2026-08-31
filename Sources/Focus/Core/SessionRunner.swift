@@ -39,11 +39,18 @@ struct SessionRunner {
     /// that never blocked, which spares a `sudo -n` call (and the matching prompt
     /// if the sudoers drop-in weren't installed).
     ///
+    /// `stopMusic` is false for a handoff: `skip-break` ends this daemon and
+    /// spawns a replacement that continues the same run on the same station, so
+    /// tearing playback down here would only have the new daemon rebuild it,
+    /// and the swap would be audible as a gap. The successor adopts whatever is
+    /// still playing (see `LocalPlayback.playIfNeeded`).
+    ///
     /// Static because `PomodoroDaemon` ends sessions it never ran: a stale one at
     /// launch, and the one `stop` signals.
-    static func endSession(unblock: Bool, clearing session: PomodoroSession, effects: SessionEffects) {
+    static func endSession(unblock: Bool, stopMusic: Bool = true,
+                           clearing session: PomodoroSession, effects: SessionEffects) {
         if unblock { effects.removeBlock() }
-        effects.stopMusic()
+        if stopMusic { effects.stopMusic() }
         session.clear()
     }
 
@@ -245,9 +252,15 @@ struct LiveSessionEffects: SessionEffects {
     }
 
     /// Playback needs no root, so call Core directly instead of forking the CLI.
+    ///
+    /// `playIfNeeded` rather than `play`: a run that arrives here with its
+    /// station already playing (the daemon `skip-break` spawns, or a pomodoro
+    /// started over music the user picked from the menu) keeps the stream it
+    /// has instead of taking a fade-out and a reconnect to end up in the same
+    /// place.
     func startMusic(_ station: Station) {
         do {
-            try LocalPlayback.play(station)
+            try LocalPlayback.playIfNeeded(station)
         } catch {
             // Music is the least of what a session does — log and work on.
             Log.daemon.error(

@@ -126,6 +126,15 @@ enum Actions {
 
     /// Music actions don't need root, so we call Core directly instead of forking
     /// a CLI subprocess — saves a fork and lets us surface errors to the user.
+    ///
+    /// Always restarts, even when the station clicked is the one already
+    /// check-marked. That looks redundant for a radio group, but it is the only
+    /// recovery the UI offers for a stream that is alive and silent: AVPlayer
+    /// can stall without ever reporting a terminal failure, and `_stream-play`
+    /// deliberately does not reconnect on a stall. Adopting instead (as the
+    /// daemon does at a handoff, where nothing is wrong) would make the wedged
+    /// case unrecoverable without Stop-then-reselect. The restart fades, so it
+    /// costs little when the stream was healthy.
     static func playMusic(_ station: Station) {
         do {
             try LocalPlayback.play(station)

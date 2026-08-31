@@ -9,7 +9,7 @@
 A macOS menu bar app + CLI to get in the zone.
 
 - **Block distracting websites** by editing `/etc/hosts`
-- **Play focus music** from free, ad-free [SomaFM](https://somafm.com) streams, any HTTP(S) stream URL, or a local file
+- **Play focus music** from free, ad-free [SomaFM](https://somafm.com) streams, any HTTP(S) stream URL, or a local file. Streams fade in and out rather than cutting, and duck under the phase cues
 - **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up after itself. The block lifts during breaks and returns for the next work phase. It keeps cycling until you stop it, with a longer break every 4 sessions — or stops after each set and asks whether to start another
 - **Global hotkeys** and a **launch at login** toggle, both configured in Settings
 - One Swift binary is both the menu bar app (no args) and the CLI (a subcommand)
@@ -81,6 +81,16 @@ Every pomodoro flag is an override: omit one and the session uses your Settings 
 
 Music sources are HTTP(S) streams (via `AVPlayer`) or local files (via `afplay`), both in detached subprocesses. A pomodoro picks its music in this order: `--music`, then the **Start music with pomodoro** preset, then `FOCUS_MUSIC_URI` (which also applies when the preset is **None**). A `--music` value naming no preset is an error; an unusable `FOCUS_MUSIC_URI` just means the session starts without music.
 
+### Audio transitions
+
+Nothing about the music starts or stops abruptly, because a hard edge in the audio is an attention event, which is the one thing focus music must not be.
+
+- **Fades.** A stream fades in over 2s on every connect, reconnects included, and fades out over 1.2s when asked to stop, so switching stations ends the old one gently rather than clipping it. The ramps are linear in decibels rather than in amplitude, so the change is heard at an even rate instead of racing through the audible tail in the last few percent ([`VolumeFade`](Sources/Focus/Core/AudioFade.swift)).
+- **Ducking.** Phase cues used to arrive at the same level as the music and get lost in it. The music now drops 12 dB for the length of the cue and comes back up slowly afterwards. The menu bar app signals the stream subprocess directly (SIGUSR1/SIGUSR2) since it only holds its PID. Local files played through `afplay` have no volume control, so the station label is checked first, and the recorded start time is checked too: SIGUSR1 terminates by default, so a recycled PID must never be signalled.
+- **Handoff.** `skip-break` replaces the running daemon with one that continues the same run, and used to tear playback down with it: a fade-out, a reconnect and a fade-in to land back on the same station. The outgoing daemon now gets SIGUSR1 instead of SIGTERM, which is the same cleanup minus the music, and the replacement adopts the stream already playing. `pause` still stops the music, since the session is genuinely frozen.
+
+All ramp timings and levels live in [`AudioFade`](Sources/Focus/Core/AudioFade.swift), which both processes read so the cue never starts before the music has finished moving out of its way.
+
 ## Sudoers (system permission)
 
 `block`, `unblock`, and `toggle` write `/etc/hosts`, and the daemon runs them via `sudo -n`, so a `NOPASSWD` entry in `/etc/sudoers.d/focus` is required. Focus installs it itself: the first Block toggle prompts with the native admin dialog and writes the rule after `visudo -cf` validation. Re-run it any time from **Settings → General → Grant permission…**, for instance if the binary path changes.
@@ -92,7 +102,7 @@ The rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binar
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
 - `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete, work_minutes, break_minutes, paused_at). A record with `paused_at` set sits frozen until resumed; starting a new session first requires resuming or stopping it.
-- `~/.focus-music.pid` — playback PID and station label (`pid\nlabel`), so `--stop` can reach it and the menu bar can name what's playing
+- `~/.focus-music.pid` — playback PID, station label, and the process start time (`pid\nlabel\nstarted_at`). `--stop` reaches the process, the menu bar names what's playing, and the start time proves the PID has not been recycled before a duck request is sent to it
 - `~/Library/Application Support/Focus/history.jsonl` — one JSON line per finished work phase (plus `completed: false` partials when a run is stopped mid-work); feeds `focus stats` and the menu bar's "Today" line
 
 ## Logs
