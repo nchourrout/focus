@@ -20,7 +20,7 @@ struct SettingsContent: View {
         // — the one control a user goes looking for when blocking isn't working.
         // The Form still scrolls on its own at large accessibility text sizes,
         // and on the Block list tab.
-        .frame(width: 500, height: 832)
+        .frame(width: 500, height: 864)
     }
 }
 
@@ -43,6 +43,7 @@ private struct GeneralTab: View {
                     }
                 }
                 Toggle("Play a sound at each phase change", isOn: phaseSoundsBinding)
+                Toggle("Show the goal in the menu bar", isOn: showGoalBinding)
             }
 
             Section {
@@ -195,6 +196,10 @@ private struct GeneralTab: View {
                 Actions.reapplyMusic(newValue)
             }
         )
+    }
+
+    private var showGoalBinding: Binding<Bool> {
+        defaultsBinding(get: { Defaults.showGoalInMenuBar }, set: { Defaults.showGoalInMenuBar = $0 })
     }
 
     private var phaseSoundsBinding: Binding<Bool> {

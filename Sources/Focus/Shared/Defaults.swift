@@ -125,6 +125,18 @@ enum Defaults {
         set { store.set(newValue, forKey: phaseSoundsKey) }
     }
 
+    private static let showGoalKey = "showGoalInMenuBar"
+
+    /// When on, the menu bar shows the running session's goal next to the
+    /// countdown. Default off: the menu bar is shared real estate, and a title
+    /// that grows with the goal pushes other apps' items off the screen, so
+    /// widening it is opt-in. `bool(forKey:)` is right here, its on-absence
+    /// false being the default we want.
+    static var showGoalInMenuBar: Bool {
+        get { store.bool(forKey: showGoalKey) }
+        set { store.set(newValue, forKey: showGoalKey) }
+    }
+
     private static let pomodoroStationKey = "pomodoroMusic"
 
     /// Which `Station` to auto-start when a pomodoro begins, or nil for silence.
