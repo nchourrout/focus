@@ -44,6 +44,7 @@ The first time you toggle the block, Focus pops a native admin password dialog a
 ## Menu bar
 
 - **stopwatch** during work, **coffee cup** during the break, with a live `mm:ss` countdown. Idle shows a dashed circle, or a slashed one when the block is on
+- The goal can sit next to the countdown (**Settings → General → Show the goal in the menu bar**, off by default, capped at 20 characters so the bar stays narrow)
 - **Start pomodoro…** — prompts for a goal; becomes **Stop pomodoro** while running
 - **Block / Unblock websites**
 - **Music** — any preset, or Stop. The current station is named in the title and check-marked in the list

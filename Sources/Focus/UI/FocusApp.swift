@@ -139,8 +139,10 @@ struct StatusLabel: View {
                 // The remaining seconds derive from the same phase rule the
                 // live countdown uses, read at the pause instant, which
                 // doesn't move.
-                Text(formatCountdown(
-                    PomodoroSession.default.phase(of: paused, at: paused.pausedAt ?? 0).timeLeft
+                Text(menuBarLabel(
+                    countdown: PomodoroSession.default.phase(of: paused, at: paused.pausedAt ?? 0).timeLeft,
+                    goal: paused.goal,
+                    showGoal: Defaults.showGoalInMenuBar
                 ))
                 .monospacedDigit()
             }
@@ -157,8 +159,16 @@ private struct CountdownText: View {
 
     var body: some View {
         let (_, timeLeft) = PomodoroSession.default.phase(of: pomodoro, at: now.timeIntervalSince1970)
-        Text(formatCountdown(timeLeft))
-            .monospacedDigit()
-            .onReceive(tick) { now = $0 }
+        // The goal is composed into this one Text, and the setting is read here
+        // rather than in the parent, for the reason listed as (1) above: this
+        // ticking child is the update the status item reliably picks up. Held in
+        // the parent (@AppStorage or otherwise), flipping the toggle mid-session
+        // changed nothing on screen until the next phase boundary republished
+        // the label. Re-reading it per tick costs a cached UserDefaults lookup.
+        Text(menuBarLabel(
+            countdown: timeLeft, goal: pomodoro.goal, showGoal: Defaults.showGoalInMenuBar
+        ))
+        .monospacedDigit()
+        .onReceive(tick) { now = $0 }
     }
 }
