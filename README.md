@@ -113,7 +113,7 @@ The rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binar
 
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
-- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete, work_minutes, break_minutes, paused_at). A record with `paused_at` set sits frozen until resumed; starting a new session first requires resuming or stopping it.
+- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, daemon_started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete, work_minutes, break_minutes, paused_at). `started_at` is when the current work phase began and moves at every cycle boundary; `daemon_started_at` is the daemon process's own start time and does not, which is what identifies the pid as still ours. A record with `paused_at` set sits frozen until resumed; starting a new session first requires resuming or stopping it.
 - `~/.focus-music.pid` — playback PID, station label, and the process start time (`pid\nlabel\nstarted_at`). `--stop` reaches the process, the menu bar names what's playing, and the start time proves the PID has not been recycled before a duck request is sent to it
 - `~/Library/Application Support/Focus/history.jsonl` — one JSON line per finished work phase (plus `completed: false` partials when a run is stopped mid-work); feeds `focus stats` and the menu bar's "Today" line
 
