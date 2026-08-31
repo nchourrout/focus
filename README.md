@@ -81,7 +81,9 @@ Every pomodoro flag is an override: omit one and the session uses your Settings 
 
 The station list runs least eventful first. What makes a stream good for focus is mostly what it doesn't do, so `dronezone`, `darkzone`, `deepspaceone` and `synphaera` lead: ambient, no vocals, nothing that resolves. `groovesalad`, `cliqhop` and `missioncontrol` have beats, and `missioncontrol` mixes in NASA mission audio, which is intermittent speech and the worst thing to have running behind any work involving language. They are kept because some people want them, not because they are the best default.
 
-Adding a station is not just a URL. AVPlayer will happily connect to a stream it cannot decode, pull it at full bitrate and render silence, with no error and a live subprocess, so "the process stayed up" proves nothing. Radio Paradise (raw ADTS AAC) and Ambient Sleeping Pill (HTTP/1.0 Icecast) both fail that way. Check that macOS actually registers audio output:
+### Adding a station
+
+Adding a station is not just a URL. AVPlayer will happily connect to a stream it cannot decode, pull it at full bitrate and render silence, with no error and a live subprocess, so "the process stayed up" proves nothing. Radio Paradise (raw ADTS AAC) and Ambient Sleeping Pill (HTTP/1.0 Icecast) both fail that way, which is why every station here is SomaFM despite that being a single point of failure. Check that macOS actually registers audio output:
 
 ```bash
 focus music --uri <url> && sleep 12

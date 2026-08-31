@@ -20,27 +20,10 @@ import Testing
     // either side silently makes one entry unreachable. Cheap to guard, and the
     // guard is what a future station addition actually needs.
 
-    @Test func namesAreUnique() {
+    @Test func namesAreUniqueAndMenuSafe() {
         let names = MusicPresets.names
         #expect(Set(names).count == names.count)
-    }
-
-    @Test func uriesAreUnique() {
-        let uris = MusicPresets.list.map(\.uri)
-        #expect(Set(uris).count == uris.count, "name(forURI:) would resolve one of them to the wrong station")
-    }
-
-    @Test func everyPresetIsAnHTTPSStream() {
-        for preset in MusicPresets.list {
-            // Station rejects anything else, so a typo here would surface as a
-            // preset that silently refuses to play.
-            #expect(preset.uri.hasPrefix("https://"), "\(preset.name) is not https")
-            #expect(Station(preset: preset.name) != nil, "\(preset.name) doesn't build a Station")
-        }
-    }
-
-    @Test func namesAreMenuSafe() {
-        for name in MusicPresets.names {
+        for name in names {
             // The name is argv for `focus music <name>` and a PID-file line, so
             // whitespace or an empty string would break parsing either side.
             // Computed outside #expect: the macro's rethrows analysis can't see
@@ -49,6 +32,17 @@ import Testing
             #expect(!name.isEmpty)
             #expect(name == name.lowercased())
             #expect(!hasWhitespace)
+        }
+    }
+
+    @Test func urisAreUniqueAndHTTPS() {
+        let uris = MusicPresets.list.map(\.uri)
+        #expect(Set(uris).count == uris.count, "name(forURI:) would resolve one of them to the wrong station")
+        for preset in MusicPresets.list {
+            // Station rejects anything else, so a typo would surface as a preset
+            // that silently refuses to play. That it builds a Station at all is
+            // asserted in StationTests, over the whole catalogue.
+            #expect(preset.uri.hasPrefix("https://"), "\(preset.name) is not https")
         }
     }
 }

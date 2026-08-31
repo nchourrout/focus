@@ -242,13 +242,10 @@ enum PomodoroDaemon {
 
     // MARK: Signal teardown
 
-    /// Retained for the daemon's lifetime; see `SignalTraps`.
-    private static var signalSources: [DispatchSourceSignal] = []
-
     /// SIGUSR1 is the handoff: the same cleanup, but playback stays up for the
     /// daemon that replaces this one. See `terminateDaemon(_:keepingMusic:)`.
     private static func installSignalCleanup(plan: PomodoroPlan) {
-        signalSources = SignalTraps.install(on: DispatchQueue(label: "focus.daemon.signal"), [
+        SignalTraps.install(on: DispatchQueue(label: "focus.daemon.signal"), [
             (SIGTERM, { signalCleanup(plan: plan, keepMusic: false) }),
             (SIGINT, { signalCleanup(plan: plan, keepMusic: false) }),
             (SIGUSR1, { signalCleanup(plan: plan, keepMusic: true) }),
