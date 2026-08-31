@@ -38,6 +38,10 @@ enum StreamPlayer {
             let connectedAt = Date().timeIntervalSince1970
             playOnce(url: streamURL)
 
+            // The connection is over. If that is because we are stopping, there
+            // is nothing left to fade and nothing to reconnect to.
+            if stopRequest.isSet { exit(0) }
+
             // A connection that held for a while earns a fresh failure budget:
             // one dropout after hours of playback must not look like the tail
             // of a rapid-fire failure series.
@@ -57,6 +61,22 @@ enum StreamPlayer {
             Thread.sleep(forTimeInterval: delay)
         }
     }
+
+    /// Set once a stop request arrives, so the reconnect loop can tell "this
+    /// connection failed" from "we are on our way out".
+    ///
+    /// Without it, a connection that dies during the fade-out sends `playOnce`
+    /// home, its `defer` cancels the fade (discarding the `exit(0)` the fade
+    /// would have run), and the loop reconnects and starts a fresh 2s fade-in
+    /// on a stream the user has already asked to stop. Only the watchdog ended
+    /// that, a quarter second later.
+    private final class StopRequest: @unchecked Sendable {
+        private let lock = NSLock()
+        private var requested = false
+        var isSet: Bool { lock.lock(); defer { lock.unlock() }; return requested }
+        func set() { lock.lock(); requested = true; lock.unlock() }
+    }
+    private static let stopRequest = StopRequest()
 
     /// Connect and play until the item reports a fatal failure or the process is
     /// SIGTERMed. Blocks the caller; returning means this connection is done and
@@ -217,6 +237,7 @@ enum StreamPlayer {
     /// process. Scheduled rather than slept so the queue stays free for the
     /// other three sources.
     private static func fadeOutAndExit() {
+        stopRequest.set()
         DispatchQueue.main.async {
             fade(to: 0, over: AudioFade.stop) { exit(0) }
         }

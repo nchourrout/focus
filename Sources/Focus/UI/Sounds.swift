@@ -35,13 +35,19 @@ enum PhaseSound {
 
 @MainActor
 enum Sounds {
-    /// Retained for the length of the cue. An `NSSound` that goes out of scope
-    /// can stop partway through, and the delay added below means the sound is
-    /// no longer playing by the time `play` returns.
-    private static var current: NSSound?
+    /// Cues still sounding. An `NSSound` that goes out of scope can stop partway
+    /// through, and one slot is not enough: `AppState` can emit a recovery cue
+    /// and a transition cue from the same tick, and the second would drop the
+    /// first's only reference.
+    private static var sounding: [NSSound] = []
     /// The pending "music back up" hop, cancelled if another cue lands first so
     /// two cues close together duck once rather than fighting each other.
     private static var restore: DispatchWorkItem?
+    /// Serial, so a duck can never be overtaken by the restore that follows it.
+    /// On a concurrent queue those two are unordered, and losing that race
+    /// leaves the music 12 dB down with nothing scheduled to lift it.
+    /// `nonisolated` because `duck` is: it touches nothing on the main actor.
+    private nonisolated static let controlQueue = DispatchQueue(label: "focus.sounds.duck")
 
     /// Play the cue for `event`, ducking any focus music underneath it.
     ///
@@ -57,32 +63,41 @@ enum Sounds {
             Log.actions.error("no system sound named \(event.systemName, privacy: .public)")
             return
         }
-        current = cue.sound
+        sounding.append(cue.sound)
         restore?.cancel()
-        duck(true)
 
-        // Let the duck land before the cue starts. Fired together, the cue's
-        // first quarter second, the part that carries its identity, would play
-        // under music still at full level.
-        DispatchQueue.main.asyncAfter(deadline: .now() + AudioFade.duckDown) {
+        // Resolved once, and held: the restore has to reach the process that was
+        // ducked. Re-reading the PID file when the cue ends would find whatever
+        // is playing by then, and un-ducking a station the user switched to
+        // mid-cue would cut its 2s fade-in down to a 0.8s one.
+        let target = LocalPlayback.duckable
+        // Nothing to duck means nothing to wait for. Delaying the cue anyway
+        // would push it a quarter second off the banner it accompanies for every
+        // user who runs sessions without music.
+        let delay = target == nil ? 0 : AudioFade.duckDown
+        if let target {
+            duck(true, on: target)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { cue.sound.play() }
+        } else {
             cue.sound.play()
         }
 
-        let work = DispatchWorkItem { duck(false) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay + cue.duration) {
+            sounding.removeAll { $0 === cue.sound }
+        }
+        guard let target else { return }
+        let work = DispatchWorkItem { duck(false, on: target) }
         restore = work
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + AudioFade.duckDown + cue.duration + AudioFade.duckTail,
+            deadline: .now() + delay + cue.duration + AudioFade.duckTail,
             execute: work
         )
     }
 
-    /// Off the main thread, because `LocalPlayback.setDucked` reads the music
-    /// PID file. It is the same read `AppState.refresh` deliberately pushes into
-    /// a detached task so the menu bar never stalls on disk, and a cue fires it
-    /// twice.
-    private nonisolated static func duck(_ ducked: Bool) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            LocalPlayback.setDucked(ducked)
-        }
+    /// Off the main thread, because `LocalPlayback.setDucked` probes the tracked
+    /// process. It is the same class of work `AppState.refresh` deliberately
+    /// pushes into a detached task so the menu bar never stalls on it.
+    private nonisolated static func duck(_ ducked: Bool, on target: LocalPlayback.Duckable) {
+        controlQueue.async { LocalPlayback.setDucked(ducked, on: target) }
     }
 }

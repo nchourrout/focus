@@ -23,8 +23,15 @@ enum SignalTraps {
     /// work alongside them.
     static func install(on queue: DispatchQueue,
                         _ handlers: [(Int32, () -> Void)]) -> [DispatchSourceSignal] {
-        handlers.map { sig, handler in
+        // Every disposition first, in its own pass. Interleaving the two loops
+        // would leave the signals later in the list still carrying their
+        // defaults while the earlier sources are already live, which is rule 1
+        // failing on exactly the signals it is there to protect: SIGUSR1 and
+        // SIGUSR2 come last, and their default is to terminate.
+        for (sig, _) in handlers {
             Darwin.signal(sig, SIG_IGN)
+        }
+        return handlers.map { sig, handler in
             let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
             source.setEventHandler(handler: handler)
             source.resume()

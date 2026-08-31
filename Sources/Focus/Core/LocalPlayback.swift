@@ -16,10 +16,11 @@ enum LocalPlayback {
     /// Stop whatever is playing and start this station. `loop` only applies to
     /// local files; streams run until stopped either way.
     ///
-    /// The stop and the start overlap on purpose. A stream asked to stop fades
-    /// out over `AudioFade.stop` while the replacement fades in over
-    /// `AudioFade.start`, so switching stations crossfades instead of leaving a
-    /// hole. The outgoing process is no longer in the PID file by then; it ends
+    /// The outgoing stream is asked to stop, not killed: it ramps down over
+    /// `AudioFade.stop` while this call returns, so switching stations ends the
+    /// old one gently rather than clipping it. The two do not cross-fade, since
+    /// the replacement still has to exec, connect and buffer before it makes any
+    /// sound. The outgoing process is out of the PID file by then; it ends
     /// itself when its fade does, and its own watchdog covers the case where it
     /// somehow cannot.
     static func play(_ station: Station, loop: Bool = false) throws {
@@ -39,47 +40,79 @@ enum LocalPlayback {
         }
         stop()
         let handle = try Shell.spawn(Shell.Command(executable, arguments))
-        // File format: "pid\nlabel". The label lets the menu bar say what's
-        // playing without re-deriving it from the stream URL, and tells
-        // `setDucked` whether the process it would signal is a stream.
-        try "\(handle.pid)\n\(station.label)".write(to: Paths.musicPid, atomically: true, encoding: .utf8)
+        // File format: "pid\nlabel\nstarted_at". The label lets the menu bar say
+        // what's playing without re-deriving it from the stream URL, and tells
+        // `duckable` whether the process it would signal is a stream. The start
+        // time is what makes signalling it safe at all; see `duckable`. It is
+        // absent from files written by older builds, and from the rare case
+        // where the process is gone before we can read it, which costs those
+        // processes ducking and nothing else.
+        var contents = "\(handle.pid)\n\(station.label)"
+        if let startedAt = pidStartTime(handle.pid) { contents += "\n\(startedAt)" }
+        try contents.write(to: Paths.musicPid, atomically: true, encoding: .utf8)
     }
 
     /// Start `station` unless it is already the thing playing.
     ///
     /// Restarting a stream costs a fade-out, a reconnect and a fade-in: a hole
-    /// in the audio at exactly the moments it should be seamless. Two callers
-    /// need that not to happen. The pomodoro daemon starts music at every
-    /// handoff, and `skip-break` hands one run to a replacement daemon that
-    /// plays the same station. The music menu marks the playing station with a
-    /// checkmark, and clicking the one already checked should do nothing rather
-    /// than interrupt it.
+    /// in the audio at exactly the moment it should be seamless. That is what
+    /// the pomodoro daemon needs at a handoff, where `skip-break` gives one run
+    /// to a replacement daemon playing the same station and nothing is wrong
+    /// with the stream already running.
     ///
+    /// Only automatic callers should use this. A user asking for a station is
+    /// also the only way to recover one that is alive but silent, so
+    /// `Actions.playMusic` restarts unconditionally.
     static func playIfNeeded(_ station: Station) throws {
         let current = playing
         guard !current.isPlaying || current.station != station else { return }
         try play(station)
     }
 
+    /// A playback process that can be sent a duck request, identified strongly
+    /// enough that sending one is safe. Callers hold it across the cue so the
+    /// restore reaches the process that was ducked.
+    struct Duckable: Equatable {
+        var pid: Int32
+        var startedAt: TimeInterval
+    }
+
+    /// The stream that can be ducked right now, or nil.
+    ///
+    /// Three things have to hold, and the third is the important one.
+    ///
+    /// It has to be a stream: a non-nil `streamURL` is exactly "this PID is a
+    /// `_stream-play`", and afplay, which has no volume of its own, treats
+    /// SIGUSR1 as fatal. It has to be alive. And its start time has to match the
+    /// one recorded when it was spawned, because a PID alone does not identify a
+    /// process for long. A `_stream-play` can exit without clearing the file
+    /// (SIGKILL, a crash, or its own exit when reconnects are exhausted), the OS
+    /// recycles the PID, and the next phase cue would then fire SIGUSR1 at an
+    /// unrelated process and terminate it. Duck requests are automatic and land
+    /// twice per cue, so this is not a risk worth carrying. It is the same guard
+    /// `PomodoroDaemon` puts on the daemon PID before signalling it.
+    ///
+    /// A PID file without a start time (an older build) is left alone, which
+    /// also covers the `_stream-play` that predates ducking and would die on the
+    /// signal's default disposition.
+    static var duckable: Duckable? {
+        let current = playing
+        guard let pid = current.pid, let startedAt = current.startedAt,
+              current.station?.streamURL != nil else { return nil }
+        return Duckable(pid: pid, startedAt: startedAt)
+    }
+
     /// Drop the music under a phase cue, or bring it back up.
     ///
-    /// Only a stream is asked: a non-nil `streamURL` is exactly "this PID is a
-    /// `_stream-play`". Local files go through afplay, which has no volume of
-    /// its own and treats SIGUSR1 as fatal, and a label-less PID file from an
-    /// older build reads as no station at all, which is the same conservatism.
-    ///
-    /// One case is knowingly left uncovered: a `_stream-play` spawned by a build
-    /// that predates ducking dies on SIGUSR1's default disposition. That needs
-    /// the binary to be replaced while music plays, costs one silenced stream
-    /// and one click, and heals itself. Encoding a capability in the PID file to
-    /// prevent it would leave a line in an on-disk format forever.
-    static func setDucked(_ ducked: Bool) {
-        let current = playing
-        guard let pid = current.pid, current.station?.streamURL != nil else { return }
+    /// Re-checks identity rather than trusting the `Duckable` it was handed: the
+    /// restore lands a couple of seconds after the duck, and the stream can be
+    /// stopped and its PID recycled in between.
+    static func setDucked(_ ducked: Bool, on target: Duckable) {
+        guard isOurProcess(pid: target.pid, expectedStart: target.startedAt) else { return }
         // Addressed to the process, never the group. `stop` can afford killpg
         // because SIGTERM is survivable by anything it reaches; a stray SIGUSR1
-        // is fatal by default, so it goes to the one PID we know handles it.
-        _ = kill(pid, ducked ? SIGUSR1 : SIGUSR2)
+        // is fatal by default, so it goes to the one PID we have just confirmed.
+        _ = kill(target.pid, ducked ? SIGUSR1 : SIGUSR2)
     }
 
     /// What's playing right now, from a single read of the PID file.
@@ -92,9 +125,13 @@ enum LocalPlayback {
         var isPlaying: Bool
         var station: Station?
         /// The tracked process, when it is alive. The menu bar only reads the
-        /// two above; the callers that go on to signal it (`stop`, `setDucked`)
+        /// two above; the callers that go on to signal it (`stop`, `duckable`)
         /// take it from here rather than parsing the file a second time.
         var pid: Int32?
+        /// Its start time as recorded when it was spawned, for callers that must
+        /// prove the PID has not been recycled. Nil for PID files written before
+        /// builds recorded it.
+        var startedAt: TimeInterval?
     }
 
     /// The menu bar asks for this once a second, so it costs one file read and
@@ -102,11 +139,12 @@ enum LocalPlayback {
     static var playing: Playing {
         guard let lines = trackedLines(), let pid = lines.first.flatMap(Int32.init),
               isPIDAlive(pid) else {
-            return Playing(isPlaying: false, station: nil, pid: nil)
+            return Playing(isPlaying: false, station: nil, pid: nil, startedAt: nil)
         }
         return Playing(isPlaying: true,
                        station: lines.count > 1 ? Station(label: lines[1]) : nil,
-                       pid: pid)
+                       pid: pid,
+                       startedAt: lines.count > 2 ? TimeInterval(lines[2]) : nil)
     }
 
     static var isPlaying: Bool { playing.isPlaying }
@@ -173,7 +211,7 @@ enum LocalPlayback {
 
     // MARK: Private
 
-    /// PID-file lines: [pid, label?]. Nil if the file is absent.
+    /// PID-file lines: [pid, label?, started_at?]. Nil if the file is absent.
     private static func trackedLines() -> [String]? {
         guard let text = try? String(contentsOf: Paths.musicPid, encoding: .utf8) else {
             return nil

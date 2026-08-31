@@ -85,8 +85,8 @@ Music sources are HTTP(S) streams (via `AVPlayer`) or local files (via `afplay`)
 
 Nothing about the music starts or stops abruptly, because a hard edge in the audio is an attention event, which is the one thing focus music must not be.
 
-- **Fades.** A stream fades in over 2s on every connect, reconnects included, and fades out over 1.2s when asked to stop. Switching stations overlaps the two into a crossfade. The ramps are linear in decibels rather than in amplitude, so the change is heard at an even rate instead of racing through the audible tail in the last few percent ([`VolumeFade`](Sources/Focus/Core/AudioFade.swift)).
-- **Ducking.** Phase cues used to arrive at the same level as the music and get lost in it. The music now drops 12 dB for the length of the cue and comes back up slowly afterwards. The menu bar app signals the stream subprocess directly (SIGUSR1/SIGUSR2) since it only holds its PID; local files played through `afplay` have no volume control, so the station label is checked before anything is signalled.
+- **Fades.** A stream fades in over 2s on every connect, reconnects included, and fades out over 1.2s when asked to stop, so switching stations ends the old one gently rather than clipping it. The ramps are linear in decibels rather than in amplitude, so the change is heard at an even rate instead of racing through the audible tail in the last few percent ([`VolumeFade`](Sources/Focus/Core/AudioFade.swift)).
+- **Ducking.** Phase cues used to arrive at the same level as the music and get lost in it. The music now drops 12 dB for the length of the cue and comes back up slowly afterwards. The menu bar app signals the stream subprocess directly (SIGUSR1/SIGUSR2) since it only holds its PID. Local files played through `afplay` have no volume control, so the station label is checked first, and the recorded start time is checked too: SIGUSR1 terminates by default, so a recycled PID must never be signalled.
 - **Handoff.** `skip-break` replaces the running daemon with one that continues the same run, and used to tear playback down with it: a fade-out, a reconnect and a fade-in to land back on the same station. The outgoing daemon now gets SIGUSR1 instead of SIGTERM, which is the same cleanup minus the music, and the replacement adopts the stream already playing. `pause` still stops the music, since the session is genuinely frozen.
 
 All ramp timings and levels live in [`AudioFade`](Sources/Focus/Core/AudioFade.swift), which both processes read so the cue never starts before the music has finished moving out of its way.
@@ -102,7 +102,7 @@ The rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binar
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
 - `~/.focus-pomodoro.json` — active session (goal, pid, started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete, work_minutes, break_minutes, paused_at). A record with `paused_at` set sits frozen until resumed; starting a new session first requires resuming or stopping it.
-- `~/.focus-music.pid` — playback PID and station label (`pid\nlabel`), so `--stop` can reach it, the menu bar can name what's playing, and duck requests go only to a stream (the label says whether it is one)
+- `~/.focus-music.pid` — playback PID, station label, and the process start time (`pid\nlabel\nstarted_at`). `--stop` reaches the process, the menu bar names what's playing, and the start time proves the PID has not been recycled before a duck request is sent to it
 - `~/Library/Application Support/Focus/history.jsonl` — one JSON line per finished work phase (plus `completed: false` partials when a run is stopped mid-work); feeds `focus stats` and the menu bar's "Today" line
 
 ## Logs
