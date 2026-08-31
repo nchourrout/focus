@@ -9,7 +9,7 @@
 A macOS menu bar app + CLI to get in the zone.
 
 - **Block distracting websites** by editing `/etc/hosts`
-- **Play focus music** from eight free, ad-free stations ([SomaFM](https://somafm.com) and [Radio Paradise](https://radioparadise.com), no account on either), any HTTP(S) stream URL, or a local file. Streams fade in and out rather than cutting, and duck under the phase cues
+- **Play focus music** from seven free, ad-free [SomaFM](https://somafm.com) stations (no account), any HTTP(S) stream URL, or a local file. Streams fade in and out rather than cutting, and duck under the phase cues
 - **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up after itself. The block lifts during breaks and returns for the next work phase. It keeps cycling until you stop it, with a longer break every 4 sessions — or stops after each set and asks whether to start another
 - **Global hotkeys** and a **launch at login** toggle, both configured in Settings
 - One Swift binary is both the menu bar app (no args) and the CLI (a subcommand)
@@ -79,7 +79,15 @@ focus stats                                       # today + last 7 days; --days 
 
 Every pomodoro flag is an override: omit one and the session uses your Settings value (25/5 out of the box), so the CLI and the menu bar start identical sessions. Cycling, long-break length and cadence, and stop-after-set live in **Settings → General**, and are re-read at each phase boundary — change one mid-run and it takes effect at the next transition, not the next run.
 
-The station list runs least eventful first. What makes a stream good for focus is mostly what it doesn't do, so `dronezone`, `darkzone`, `deepspaceone`, `synphaera` and `serenity` lead: ambient, no vocals, nothing that resolves. `groovesalad`, `cliqhop` and `missioncontrol` have beats, and `missioncontrol` mixes in NASA mission audio, which is intermittent speech and the worst thing to have running behind any work involving language. They are kept because some people want them, not because they are the best default.
+The station list runs least eventful first. What makes a stream good for focus is mostly what it doesn't do, so `dronezone`, `darkzone`, `deepspaceone` and `synphaera` lead: ambient, no vocals, nothing that resolves. `groovesalad`, `cliqhop` and `missioncontrol` have beats, and `missioncontrol` mixes in NASA mission audio, which is intermittent speech and the worst thing to have running behind any work involving language. They are kept because some people want them, not because they are the best default.
+
+Adding a station is not just a URL. AVPlayer will happily connect to a stream it cannot decode, pull it at full bitrate and render silence, with no error and a live subprocess, so "the process stayed up" proves nothing. Radio Paradise (raw ADTS AAC) and Ambient Sleeping Pill (HTTP/1.0 Icecast) both fail that way. Check that macOS actually registers audio output:
+
+```bash
+focus music --uri <url> && sleep 12
+pmset -g assertions | grep "$(head -1 ~/.focus-music.pid)"   # a line here means real audio
+ps -p "$(head -1 ~/.focus-music.pid)" -o time=                # and CPU should climb ~0.15s/10s
+```
 
 Music sources are HTTP(S) streams (via `AVPlayer`) or local files (via `afplay`), both in detached subprocesses. A pomodoro picks its music in this order: `--music`, then the **Start music with pomodoro** preset, then `FOCUS_MUSIC_URI` (which also applies when the preset is **None**). A `--music` value naming no preset is an error; an unusable `FOCUS_MUSIC_URI` just means the session starts without music.
 
