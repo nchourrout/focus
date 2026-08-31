@@ -145,6 +145,32 @@ private final class FakeEffects: SessionEffects {
         #expect(effects.events.contains(.stopMusic))
     }
 
+    // MARK: Handoff
+
+    /// What `skip-break` relies on: the outgoing daemon lifts its block and
+    /// clears the state file, but leaves the stream alone so the replacement
+    /// daemon can adopt it. Tearing playback down here is the gap the user hears
+    /// every time they cut a break short.
+    @Test func aHandoffTeardownLeavesPlaybackRunning() throws {
+        let session = try makeSession()
+        let effects = FakeEffects(clock: Self.start, cadence: makeCadence())
+
+        SessionRunner.endSession(unblock: true, stopMusic: false,
+                                 clearing: session, effects: effects)
+
+        #expect(effects.events == [.removeBlock], "the block goes, the music stays")
+        #expect(session.current == nil, "the successor writes its own record")
+    }
+
+    @Test func anOrdinaryTeardownStillStopsPlayback() throws {
+        let session = try makeSession()
+        let effects = FakeEffects(clock: Self.start, cadence: makeCadence())
+
+        SessionRunner.endSession(unblock: true, clearing: session, effects: effects)
+
+        #expect(effects.events == [.removeBlock, .stopMusic])
+    }
+
     // MARK: Cycling
 
     @Test func cyclingRollsDeadlinesAndRestoresTheBlock() throws {

@@ -126,9 +126,13 @@ enum Actions {
 
     /// Music actions don't need root, so we call Core directly instead of forking
     /// a CLI subprocess — saves a fork and lets us surface errors to the user.
+    ///
+    /// `playIfNeeded` because the music menu is a radio group: the playing
+    /// station carries a checkmark, and clicking the one already checked used to
+    /// fade it out and reconnect to the same stream.
     static func playMusic(_ station: Station) {
         do {
-            try LocalPlayback.play(station)
+            try LocalPlayback.playIfNeeded(station)
         } catch {
             Log.actions.error("playMusic \(station.label, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }

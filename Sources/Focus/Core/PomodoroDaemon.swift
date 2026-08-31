@@ -126,27 +126,37 @@ enum PomodoroDaemon {
             at: Date().timeIntervalSince1970
         )
 
-        // Stop the old daemon. Its SIGTERM handler tears down the block (a
-        // no-op mid-break) and playback; the replacement restarts the same
-        // station, so skipping costs one short stream gap.
-        terminateDaemon(current)
+        // Hand the run over rather than stopping it. The old daemon tears down
+        // its block (a no-op mid-break) but leaves playback alone, and the
+        // replacement adopts the stream already running on the same station, so
+        // skipping a break is silent in the audio. Fading out and reconnecting
+        // to land on the same station was the loudest thing skip-break did.
+        terminateDaemon(current, keepingMusic: true)
         // Belt for a daemon that lost the signal race (same as stop()).
-        SessionRunner.endSession(unblock: current.block, clearing: session,
-                                 effects: LiveSessionEffects())
+        SessionRunner.endSession(unblock: current.block, stopMusic: false,
+                                 clearing: session, effects: LiveSessionEffects())
         try spawn(active: next)
         print("focus: break skipped — starting session \(next.sessionNumber)")
     }
 
-    /// SIGTERM the daemon behind `state` and wait up to a second for it to go.
+    /// Signal the daemon behind `state` and wait up to a second for it to go.
+    ///
+    /// `keepingMusic` picks which signal, and so which teardown the daemon runs:
+    /// SIGTERM stops everything, SIGUSR1 asks for a handoff that leaves playback
+    /// running for the successor. A daemon from a build that predates SIGUSR1
+    /// handling dies on its default disposition without cleaning up at all,
+    /// which lands in the same place by accident: the caller's `endSession` belt
+    /// does the unblock, and the music it never touched carries on.
     ///
     /// Only signal if the PID is still ours; skip if the PID has been recycled.
     /// The `pid > 0` check is a defensive belt: `kill(0, SIGTERM)` would signal
     /// every process in our process group. Callers follow this with their own
     /// `endSession` belt for a daemon that lost the signal race.
-    private static func terminateDaemon(_ state: PomodoroSession.Active) {
+    private static func terminateDaemon(_ state: PomodoroSession.Active,
+                                        keepingMusic: Bool = false) {
         guard state.pid > 0,
               isOurProcess(pid: state.pid, expectedStart: state.startedAt) else { return }
-        _ = kill(state.pid, SIGTERM)
+        _ = kill(state.pid, keepingMusic ? SIGUSR1 : SIGTERM)
         for _ in 0..<10 {
             usleep(100_000)
             if !isPIDAlive(state.pid) { break }
@@ -189,6 +199,8 @@ enum PomodoroDaemon {
     ///   outside `pomodoro stop` (a stray kill, an IDE stopping a foreground
     ///   debug run) left the block applied and playback running until the next
     ///   app launch happened to recover it.
+    /// - SIGUSR1 is the same teardown minus the music, for `skip-break` handing
+    ///   this run to a replacement daemon that keeps playing the same station.
     static func runDaemon(_ plan: PomodoroPlan, workEnd: Double, breakEnd: Double) {
         signal(SIGHUP, SIG_IGN)
         _ = Darwin.setsid()
@@ -230,35 +242,31 @@ enum PomodoroDaemon {
 
     // MARK: Signal teardown
 
-    /// Keeps the signal sources alive for the daemon's lifetime — a released
-    /// source stops delivering, and with the default disposition re-ignored we'd
-    /// never clean up at all.
+    /// Retained for the daemon's lifetime; see `SignalTraps`.
     private static var signalSources: [DispatchSourceSignal] = []
 
+    /// SIGUSR1 is the handoff: the same cleanup, but playback stays up for the
+    /// daemon that replaces this one. See `terminateDaemon(_:keepingMusic:)`.
     private static func installSignalCleanup(plan: PomodoroPlan) {
-        // Take over disposition before resuming the sources, or a signal landing
-        // in between would kill us with the default handler.
-        signal(SIGTERM, SIG_IGN)
-        signal(SIGINT, SIG_IGN)
-        let queue = DispatchQueue(label: "focus.daemon.signal")
-        for sig in [SIGTERM, SIGINT] {
-            let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
-            source.setEventHandler { signalCleanup(plan: plan) }
-            source.resume()
-            signalSources.append(source)
-        }
+        signalSources = SignalTraps.install(on: DispatchQueue(label: "focus.daemon.signal"), [
+            (SIGTERM, { signalCleanup(plan: plan, keepMusic: false) }),
+            (SIGINT, { signalCleanup(plan: plan, keepMusic: false) }),
+            (SIGUSR1, { signalCleanup(plan: plan, keepMusic: true) }),
+        ])
     }
 
     /// Runs on the signal queue, while the runner thread may be parked in its
     /// next sleep. Both paths are idempotent (unblock is a no-op on a clean
     /// hosts file, stopMusic kills nothing twice), so racing the runner's own
     /// teardown is harmless; `exit` ends whichever loses.
-    private static func signalCleanup(plan: PomodoroPlan) {
-        Log.daemon.notice("terminating on signal; cleaning up")
+    private static func signalCleanup(plan: PomodoroPlan, keepMusic: Bool) {
+        Log.daemon.notice(
+            "terminating on signal; cleaning up (music \(keepMusic ? "kept" : "stopped", privacy: .public))"
+        )
         let session = PomodoroSession.default
         SessionRunner.recordPartialIfNeeded(clearing: session, now: Date().timeIntervalSince1970)
         SessionRunner.endSession(
-            unblock: plan.block, clearing: session,
+            unblock: plan.block, stopMusic: !keepMusic, clearing: session,
             effects: LiveSessionEffects()
         )
         exit(0)
