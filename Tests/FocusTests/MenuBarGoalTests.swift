@@ -14,6 +14,12 @@ struct MenuBarGoalTests {
                 == "12:34  Write the spec")
     }
 
+    /// `focus pomodoro start "  "` is accepted by the CLI, and a bare separator
+    /// would widen the status item for nothing.
+    @Test func labelLeavesOutAGoalThatIsAllWhitespace() {
+        #expect(menuBarLabel(countdown: 754, goal: "   ", showGoal: true) == "12:34")
+    }
+
     @Test func labelCapsTheGoalItAppends() {
         #expect(menuBarLabel(countdown: 5, goal: String(repeating: "x", count: 40), showGoal: true)
                 == "0:05  " + String(repeating: "x", count: 19) + "\u{2026}")

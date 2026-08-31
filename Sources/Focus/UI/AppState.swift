@@ -237,8 +237,12 @@ final class AppState: ObservableObject {
 /// has asked for one. Pure, so the caller decides where `showGoal` comes from.
 func menuBarLabel(countdown: TimeInterval, goal: String, showGoal: Bool) -> String {
     let time = formatCountdown(countdown)
-    guard showGoal else { return time }
-    return "\(time)  \(menuBarGoal(goal))"
+    // A goal of nothing but whitespace reaches here from `focus pomodoro start
+    // "  "`, which the CLI accepts. Joining it anyway would pad the status item
+    // with a separator and no content.
+    let capped = showGoal ? menuBarGoal(goal) : ""
+    guard !capped.isEmpty else { return time }
+    return "\(time)  \(capped)"
 }
 
 /// The goal as it reads in the menu bar: whitespace collapsed to a single line
@@ -247,17 +251,20 @@ func menuBarLabel(countdown: TimeInterval, goal: String, showGoal: Bool) -> Stri
 /// The cap is the point. A status item is as wide as its title, and macOS gives
 /// the ones on the left away first when the bar runs out of room, so an
 /// uncapped goal doesn't clip itself, it hides other apps' icons. Twenty
-/// characters is about a short phrase — enough to tell two sessions apart,
+/// characters is about a short phrase, enough to tell two sessions apart,
 /// which is all this is for.
 func menuBarGoal(_ goal: String, limit: Int = 20) -> String {
     let flattened = goal.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     guard flattened.count > limit else { return flattened }
-    // Drop a trailing space so the ellipsis follows the word, not a gap.
-    let head = flattened.prefix(limit - 1).reversed().drop(while: \.isWhitespace).reversed()
+    // At most one space can be trailing here, the line above collapsed the runs.
+    // Drop it so the ellipsis follows the word rather than a gap.
+    var head = flattened.prefix(limit - 1)
+    if head.hasSuffix(" ") { head = head.dropLast() }
     return String(head) + "\u{2026}"
 }
 
-/// mm:ss formatter, used by both the menu bar label and the dropdown.
+/// mm:ss formatter for the status item's countdown, its one caller since the
+/// goal and the countdown became a single label.
 func formatCountdown(_ t: TimeInterval) -> String {
     let total = max(0, Int(t))
     return String(format: "%d:%02d", total / 60, total % 60)

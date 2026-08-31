@@ -159,6 +159,11 @@ private struct CountdownText: View {
 
     var body: some View {
         let (_, timeLeft) = PomodoroSession.default.phase(of: pomodoro, at: now.timeIntervalSince1970)
+        // The goal stays up through the break, where the dropdown says "Break"
+        // instead. The icon beside it already carries the phase, and a goal that
+        // came and went every 25 minutes would resize the status item, and every
+        // item left of it, twice a session.
+        //
         // The goal is composed into this one Text, and the setting is read here
         // rather than in the parent, for the reason listed as (1) above: this
         // ticking child is the update the status item reliably picks up. Held in

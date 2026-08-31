@@ -130,8 +130,8 @@ enum Defaults {
     /// When on, the menu bar shows the running session's goal next to the
     /// countdown. Default off: the menu bar is shared real estate, and a title
     /// that grows with the goal pushes other apps' items off the screen, so
-    /// widening it is opt-in. `bool(forKey:)` is right here — its on-absence
-    /// false is the default we want.
+    /// widening it is opt-in. `bool(forKey:)` is right here, its on-absence
+    /// false being the default we want.
     static var showGoalInMenuBar: Bool {
         get { store.bool(forKey: showGoalKey) }
         set { store.set(newValue, forKey: showGoalKey) }
