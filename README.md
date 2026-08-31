@@ -9,7 +9,7 @@
 A macOS menu bar app + CLI to get in the zone.
 
 - **Block distracting websites** by editing `/etc/hosts`
-- **Play focus music** from free, ad-free [SomaFM](https://somafm.com) streams, any HTTP(S) stream URL, or a local file. Streams fade in and out rather than cutting, and duck under the phase cues
+- **Play focus music** from eight free, ad-free stations ([SomaFM](https://somafm.com) and [Radio Paradise](https://radioparadise.com), no account on either), any HTTP(S) stream URL, or a local file. Streams fade in and out rather than cutting, and duck under the phase cues
 - **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up after itself. The block lifts during breaks and returns for the next work phase. It keeps cycling until you stop it, with a longer break every 4 sessions — or stops after each set and asks whether to start another
 - **Global hotkeys** and a **launch at login** toggle, both configured in Settings
 - One Swift binary is both the menu bar app (no args) and the CLI (a subcommand)
@@ -60,7 +60,7 @@ sudo focus block                 # block sites from block.txt
 sudo focus unblock
 sudo focus toggle --json
 
-focus music --list               # built-in SomaFM streams
+focus music --list               # built-in stations, least eventful first
 focus music groovesalad          # a preset, or any http(s) stream URL
 focus music --file ~/brown.mp3 --loop
 focus music --stop
@@ -78,6 +78,8 @@ focus stats                                       # today + last 7 days; --days 
 ```
 
 Every pomodoro flag is an override: omit one and the session uses your Settings value (25/5 out of the box), so the CLI and the menu bar start identical sessions. Cycling, long-break length and cadence, and stop-after-set live in **Settings → General**, and are re-read at each phase boundary — change one mid-run and it takes effect at the next transition, not the next run.
+
+The station list runs least eventful first. What makes a stream good for focus is mostly what it doesn't do, so `dronezone`, `darkzone`, `deepspaceone`, `synphaera` and `serenity` lead: ambient, no vocals, nothing that resolves. `groovesalad`, `cliqhop` and `missioncontrol` have beats, and `missioncontrol` mixes in NASA mission audio, which is intermittent speech and the worst thing to have running behind any work involving language. They are kept because some people want them, not because they are the best default.
 
 Music sources are HTTP(S) streams (via `AVPlayer`) or local files (via `afplay`), both in detached subprocesses. A pomodoro picks its music in this order: `--music`, then the **Start music with pomodoro** preset, then `FOCUS_MUSIC_URI` (which also applies when the preset is **None**). A `--music` value naming no preset is an error; an unusable `FOCUS_MUSIC_URI` just means the session starts without music.
 
