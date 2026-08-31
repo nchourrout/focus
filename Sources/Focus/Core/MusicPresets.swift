@@ -4,12 +4,14 @@ import Foundation
 /// listener-supported, no ads, no account required. AVPlayer drives them in a
 /// detached subprocess (`_stream-play`).
 ///
-/// One provider is a known weakness, and two candidates were tried and rejected
-/// rather than not looked for. Radio Paradise serves its ambient channel only as
-/// raw ADTS AAC or Ogg FLAC, and Ambient Sleeping Pill as HTTP/1.0 Icecast:
-/// AVPlayer connects to both, pulls them at full bitrate, and decodes neither.
-/// A station is only shippable here if AVPlayer actually renders it, which
-/// process liveness does not show. See CONTRIBUTING notes in the README.
+/// A station ships only once AVPlayer has been seen to actually render it.
+/// AVPlayer will connect to a stream it cannot decode, pull it at full bitrate
+/// and play silence, so a live `_stream-play` proves nothing. The README's
+/// "Adding a station" section has the check, and the two providers already
+/// tried and rejected.
+///
+/// Every station here is SomaFM, which is a single point of failure and a known
+/// weakness of this list.
 ///
 /// Ordered least eventful first. What makes a station good for focus is mostly
 /// what it doesn't do: no vocals, no beat changes, nothing that resolves. The

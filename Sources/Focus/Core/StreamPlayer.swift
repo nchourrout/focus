@@ -40,7 +40,7 @@ enum StreamPlayer {
 
             // The connection is over. If that is because we are stopping, there
             // is nothing left to fade and nothing to reconnect to.
-            if stopRequest.isSet { exit(0) }
+            if stopping { exit(0) }
 
             // A connection that held for a while earns a fresh failure budget:
             // one dropout after hours of playback must not look like the tail
@@ -62,21 +62,7 @@ enum StreamPlayer {
         }
     }
 
-    /// Set once a stop request arrives, so the reconnect loop can tell "this
-    /// connection failed" from "we are on our way out".
-    ///
-    /// Without it, a connection that dies during the fade-out sends `playOnce`
-    /// home, its `defer` cancels the fade (discarding the `exit(0)` the fade
-    /// would have run), and the loop reconnects and starts a fresh 2s fade-in
-    /// on a stream the user has already asked to stop. Only the watchdog ended
-    /// that, a quarter second later.
-    private final class StopRequest: @unchecked Sendable {
-        private let lock = NSLock()
-        private var requested = false
-        var isSet: Bool { lock.lock(); defer { lock.unlock() }; return requested }
-        func set() { lock.lock(); requested = true; lock.unlock() }
-    }
-    private static let stopRequest = StopRequest()
+
 
     /// Connect and play until the item reports a fatal failure or the process is
     /// SIGTERMed. Blocks the caller; returning means this connection is done and
@@ -165,6 +151,12 @@ enum StreamPlayer {
     private static var fadeTimer: Timer?
     /// Whether a phase cue is currently holding the music down.
     private static var ducked = false
+    /// Set once a stop request arrives, so the reconnect loop can tell "this
+    /// connection failed" from "we are on our way out". Without it, a connection
+    /// dying during the fade-out sends `playOnce` home, its `defer` cancels the
+    /// fade (discarding the `exit(0)` the fade would have run), and the loop
+    /// reconnects and starts a fresh fade-in on a stream already asked to stop.
+    private static var stopping = false
 
     /// Where a fade should land when nothing interrupts it. Full is 1.0:
     /// AVPlayer's volume is relative to system output, so the fades are the only
@@ -211,8 +203,6 @@ enum StreamPlayer {
     // MARK: Signals
 
     private static let signalQueue = DispatchQueue(label: "focus.stream.signal")
-    /// Retained for the life of the process; see `SignalTraps`.
-    private static var signalSources: [DispatchSourceSignal] = []
 
     /// Catch the four signals `LocalPlayback` sends.
     ///
@@ -222,7 +212,7 @@ enum StreamPlayer {
     /// control file because a duck that arrives late is worse than no duck, and
     /// because the sender already holds our PID.
     private static func installSignalHandling() {
-        signalSources = SignalTraps.install(on: signalQueue, [
+        SignalTraps.install(on: signalQueue, [
             (SIGTERM, { fadeOutAndExit() }),
             (SIGINT, { fadeOutAndExit() }),
             (SIGUSR1, { setDucked(true) }),
@@ -237,8 +227,11 @@ enum StreamPlayer {
     /// process. Scheduled rather than slept so the queue stays free for the
     /// other three sources.
     private static func fadeOutAndExit() {
-        stopRequest.set()
         DispatchQueue.main.async {
+            // Set here rather than on this queue so `stopping` stays main-thread
+            // state like everything else above, and so it lands in the same block
+            // that starts the ramp. The reconnect loop reads it on main too.
+            stopping = true
             fade(to: 0, over: AudioFade.stop) { exit(0) }
         }
         signalQueue.asyncAfter(deadline: .now() + AudioFade.stop + 0.25) { exit(0) }

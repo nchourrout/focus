@@ -102,12 +102,41 @@ enum LocalPlayback {
         return Duckable(pid: pid, startedAt: startedAt)
     }
 
-    /// Drop the music under a phase cue, or bring it back up.
+    /// Drop `target` under a phase cue and bring it back up `duration` later.
     ///
-    /// Re-checks identity rather than trusting the `Duckable` it was handed: the
-    /// restore lands a couple of seconds after the duck, and the stream can be
-    /// stopped and its PID recycled in between.
-    static func setDucked(_ ducked: Bool, on target: Duckable) {
+    /// The whole timeline lives here because the process does. Two signals have
+    /// to arrive in order, so they share a serial queue; the restore has to
+    /// reach the stream that was ducked rather than whatever is playing when the
+    /// cue ends, so the handle is held across the gap; and overlapping cues have
+    /// to settle on one answer, so a later request supersedes an earlier one's
+    /// restore instead of the two fighting.
+    ///
+    /// Returns immediately, and every signal goes out on the private queue.
+    static func duck(_ target: Duckable, for duration: TimeInterval) {
+        duckQueue.async {
+            duckGeneration += 1
+            let generation = duckGeneration
+            setDucked(true, on: target)
+            duckQueue.asyncAfter(deadline: .now() + duration) {
+                // A newer cue owns the duck now, and will lift it on its own
+                // schedule. Lifting here would raise the music mid-cue.
+                guard duckGeneration == generation else { return }
+                setDucked(false, on: target)
+            }
+        }
+    }
+
+    /// Serial, so a duck can never be overtaken by the restore that follows it.
+    /// On a concurrent queue those two are unordered, and losing that race
+    /// leaves the music down with nothing scheduled to lift it.
+    private static let duckQueue = DispatchQueue(label: "focus.playback.duck")
+    /// Guarded by `duckQueue`. Identifies which cue currently owns the duck.
+    private static var duckGeneration = 0
+
+    /// Send one duck or restore. Re-checks identity rather than trusting the
+    /// `Duckable` it was handed: the restore lands seconds after the duck, and
+    /// the stream can be stopped and its PID recycled in between.
+    private static func setDucked(_ ducked: Bool, on target: Duckable) {
         guard isOurProcess(pid: target.pid, expectedStart: target.startedAt) else { return }
         // Addressed to the process, never the group. `stop` can afford killpg
         // because SIGTERM is survivable by anything it reaches; a stray SIGUSR1
@@ -122,7 +151,8 @@ enum LocalPlayback {
     /// `stop()` uses, which is why this reflects playback started by the CLI, the
     /// pomodoro daemon, or the menu bar alike — not just this process.
     struct Playing {
-        var isPlaying: Bool
+        /// Derived: a pid is recorded here only once it has been confirmed alive.
+        var isPlaying: Bool { pid != nil }
         var station: Station?
         /// The tracked process, when it is alive. The menu bar only reads the
         /// two above; the callers that go on to signal it (`stop`, `duckable`)
@@ -139,10 +169,9 @@ enum LocalPlayback {
     static var playing: Playing {
         guard let lines = trackedLines(), let pid = lines.first.flatMap(Int32.init),
               isPIDAlive(pid) else {
-            return Playing(isPlaying: false, station: nil, pid: nil, startedAt: nil)
+            return Playing(station: nil, pid: nil, startedAt: nil)
         }
-        return Playing(isPlaying: true,
-                       station: lines.count > 1 ? Station(label: lines[1]) : nil,
+        return Playing(station: lines.count > 1 ? Station(label: lines[1]) : nil,
                        pid: pid,
                        startedAt: lines.count > 2 ? TimeInterval(lines[2]) : nil)
     }
