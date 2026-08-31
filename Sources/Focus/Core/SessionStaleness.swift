@@ -14,7 +14,8 @@ enum SessionStaleness {
     /// waiting for `pomodoro resume` — so they read as owned, not abandoned.
     /// Liveness is injected so the decision is testable without a process
     /// table; production passes `isOurProcess(pid:expectedStart:)`, whose start-
-    /// time comparison is what rules out PID recycling.
+    /// time comparison is what rules out PID recycling. It compares against
+    /// `daemonIdentity`, not `startedAt`: see that property for why.
     static func isStale(
         _ active: PomodoroSession.Active,
         liveness: (_ pid: Int32, _ startedAt: TimeInterval) -> Bool = {
@@ -23,7 +24,7 @@ enum SessionStaleness {
     ) -> Bool {
         if active.pausedAt != nil { return false }
         guard active.pid > 0 else { return true }
-        return !liveness(active.pid, active.startedAt)
+        return !liveness(active.pid, active.daemonIdentity)
     }
 }
 

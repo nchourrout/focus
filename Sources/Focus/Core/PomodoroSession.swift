@@ -22,6 +22,11 @@ struct PomodoroSession {
         let startedAt: TimeInterval
         let workEnd: TimeInterval
         let breakEnd: TimeInterval
+        /// The daemon process's own start time, stamped from `pidStartTime` right
+        /// after the fork. Nil for records written before this field existed, and
+        /// for one that has no daemon yet (paused, or between `resumed` and the
+        /// spawn that stamps it). See `daemonIdentity`.
+        var daemonStartedAt: TimeInterval?
         /// nil internally; serialized as "" to stay compatible with the Python schema.
         var music: String?
         /// Whether the daemon should block /etc/hosts for the duration of the session.
@@ -64,12 +69,32 @@ struct PomodoroSession {
         /// resolving to current Settings here reproduces exactly what those
         /// runs did, and keeps the migration rule in one place instead of at
         /// every command that acts mid-run.
+        /// The timestamp that proves `pid` is still this run's daemon, for
+        /// `isOurProcess`.
+        ///
+        /// Not `startedAt`. That is the current work phase's start, and
+        /// `nextSession` moves it at every cycle boundary while the very same
+        /// daemon keeps running, so from the second session onward it named a
+        /// moment the process did not start at. Every question of "is this still
+        /// our daemon" then answered no: the menu bar cleared live sessions as
+        /// abandoned two seconds into session 2, and `stop`, `pause` and
+        /// `skip-break` quietly stopped signalling the daemon at all, leaving it
+        /// orphaned. Auto-start is on by default, so this reached every run.
+        ///
+        /// Falls back to `startedAt` for records written before the field
+        /// existed, which is what those builds compared against anyway. Such a
+        /// record still misidentifies its daemon past session 1; nothing can
+        /// recover the real start time after the fact, and it corrects itself at
+        /// the next `pomodoro start`.
+        var daemonIdentity: TimeInterval { daemonStartedAt ?? startedAt }
+
         var effectiveWorkMinutes: Int { workMinutes ?? Defaults.workMinutes }
         var effectiveBreakMinutes: Int { breakMinutes ?? Defaults.breakMinutes }
 
         enum CodingKeys: String, CodingKey {
             case goal, pid, music, block
             case startedAt = "started_at"
+            case daemonStartedAt = "daemon_started_at"
             case workEnd = "work_end"
             case breakEnd = "break_end"
             case sessionNumber = "session_number"
@@ -82,7 +107,7 @@ struct PomodoroSession {
 
         init(goal: String, pid: Int32, startedAt: TimeInterval,
              workEnd: TimeInterval, breakEnd: TimeInterval,
-             music: String?, block: Bool,
+             music: String?, block: Bool, daemonStartedAt: TimeInterval? = nil,
              sessionNumber: Int = 1, isLongBreak: Bool = false,
              setComplete: Bool = false,
              workMinutes: Int? = nil, breakMinutes: Int? = nil,
@@ -90,6 +115,7 @@ struct PomodoroSession {
             self.goal = goal
             self.pid = pid
             self.startedAt = startedAt
+            self.daemonStartedAt = daemonStartedAt
             self.workEnd = workEnd
             self.breakEnd = breakEnd
             self.music = music
@@ -107,6 +133,7 @@ struct PomodoroSession {
             goal = try c.decode(String.self, forKey: .goal)
             pid = try c.decode(Int32.self, forKey: .pid)
             startedAt = try c.decode(TimeInterval.self, forKey: .startedAt)
+            daemonStartedAt = try c.decodeIfPresent(TimeInterval.self, forKey: .daemonStartedAt)
             workEnd = try c.decode(TimeInterval.self, forKey: .workEnd)
             breakEnd = try c.decode(TimeInterval.self, forKey: .breakEnd)
             let raw = try c.decodeIfPresent(String.self, forKey: .music) ?? ""
@@ -135,6 +162,7 @@ struct PomodoroSession {
             try c.encodeIfPresent(workMinutes, forKey: .workMinutes)
             try c.encodeIfPresent(breakMinutes, forKey: .breakMinutes)
             try c.encodeIfPresent(pausedAt, forKey: .pausedAt)
+            try c.encodeIfPresent(daemonStartedAt, forKey: .daemonStartedAt)
         }
     }
 
@@ -226,6 +254,9 @@ struct PomodoroSession {
             goal: prev.goal, pid: prev.pid, startedAt: start,
             workEnd: workEnd, breakEnd: breakEnd,
             music: prev.music, block: prev.block,
+            // Same process, so its start time carries even though `startedAt`
+            // moves to this session.
+            daemonStartedAt: prev.daemonStartedAt,
             sessionNumber: sessionNumber, isLongBreak: long,
             workMinutes: workMinutes, breakMinutes: breakMinutes
         )
@@ -241,6 +272,7 @@ struct PomodoroSession {
             goal: prev.goal, pid: prev.pid, startedAt: prev.startedAt,
             workEnd: end, breakEnd: end,
             music: prev.music, block: prev.block,
+            daemonStartedAt: prev.daemonStartedAt,
             // No break follows a set-complete marker, so isLongBreak is moot — keep
             // it false rather than carrying a flag for a break that never happens.
             sessionNumber: prev.sessionNumber, isLongBreak: false,
@@ -280,6 +312,7 @@ struct PomodoroSession {
             breakEnd: active.breakEnd + delta,
             music: active.music,
             block: active.block,
+            daemonStartedAt: nil,
             sessionNumber: active.sessionNumber,
             isLongBreak: active.isLongBreak,
             setComplete: active.setComplete,

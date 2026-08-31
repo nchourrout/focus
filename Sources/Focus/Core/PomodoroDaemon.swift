@@ -19,7 +19,7 @@ enum PomodoroDaemon {
             }
             // Verify the PID is both alive *and* actually our daemon, to guard against
             // PID recycling (a long-running process reusing the dead daemon's PID).
-            if isOurProcess(pid: existing.pid, expectedStart: existing.startedAt) {
+            if isOurProcess(pid: existing.pid, expectedStart: existing.daemonIdentity) {
                 throw CLIError.alreadyRunning
             }
             print("focus: clearing stale pomodoro state from previous session")
@@ -90,7 +90,7 @@ enum PomodoroDaemon {
             print("focus: no paused pomodoro")
             return
         }
-        if paused.pid > 0, isOurProcess(pid: paused.pid, expectedStart: paused.startedAt) {
+        if paused.pid > 0, isOurProcess(pid: paused.pid, expectedStart: paused.daemonIdentity) {
             print("focus: pomodoro daemon unexpectedly alive; stop it before resuming")
             return
         }
@@ -155,7 +155,7 @@ enum PomodoroDaemon {
     private static func terminateDaemon(_ state: PomodoroSession.Active,
                                         keepingMusic: Bool = false) {
         guard state.pid > 0,
-              isOurProcess(pid: state.pid, expectedStart: state.startedAt) else { return }
+              isOurProcess(pid: state.pid, expectedStart: state.daemonIdentity) else { return }
         _ = kill(state.pid, keepingMusic ? SIGUSR1 : SIGTERM)
         for _ in 0..<10 {
             usleep(100_000)
@@ -187,6 +187,9 @@ enum PomodoroDaemon {
 
         var started = active
         started.pid = handle.pid
+        // Stamp the process's own start time, which is what later identifies it.
+        // `startedAt` cannot do that job: it moves at every cycle boundary.
+        started.daemonStartedAt = pidStartTime(handle.pid)
         try PomodoroSession.default.save(started)
     }
 
