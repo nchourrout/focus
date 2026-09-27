@@ -28,6 +28,11 @@ enum Paths {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".focus-pomodoro.json")
     }
 
+    /// Serializes pomodoro start/stop/pause/resume/skip. See `PomodoroDaemon`.
+    static var pomodoroLock: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".focus-pomodoro.lock")
+    }
+
     static var musicPid: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".focus-music.pid")
     }

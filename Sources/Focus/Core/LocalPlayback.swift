@@ -151,7 +151,8 @@ enum LocalPlayback {
     /// `stop()` uses, which is why this reflects playback started by the CLI, the
     /// pomodoro daemon, or the menu bar alike — not just this process.
     struct Playing {
-        /// Derived: a pid is recorded here only once it has been confirmed alive.
+        /// Derived: a pid is recorded here only once it has been confirmed alive
+        /// and, when the file carries a start time, confirmed to be the player.
         var isPlaying: Bool { pid != nil }
         var station: Station?
         /// The tracked process, when it is alive. The menu bar only reads the
@@ -171,9 +172,19 @@ enum LocalPlayback {
               isPIDAlive(pid) else {
             return Playing(station: nil, pid: nil, startedAt: nil)
         }
+        let startedAt = lines.count > 2 ? TimeInterval(lines[2]) : nil
+        // The player can exit on its own (reconnects exhausted, afplay giving
+        // up) and leave its PID file behind. Once the OS hands that PID to
+        // another process, "alive" is no longer "ours": the menu would show
+        // music that isn't playing, and `stop` would SIGTERM a stranger's
+        // process group. Files from builds that didn't record the start time
+        // can only be checked for liveness.
+        if let startedAt, !isOurProcess(pid: pid, expectedStart: startedAt) {
+            return Playing(station: nil, pid: nil, startedAt: nil)
+        }
         return Playing(station: lines.count > 1 ? Station(label: lines[1]) : nil,
                        pid: pid,
-                       startedAt: lines.count > 2 ? TimeInterval(lines[2]) : nil)
+                       startedAt: startedAt)
     }
 
     static var isPlaying: Bool { playing.isPlaying }

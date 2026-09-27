@@ -59,7 +59,11 @@ enum BlockList {
     }
 
     static func load(from url: URL) throws -> [String] {
-        let content = try read(url)
+        try parse(try read(url), path: url)
+    }
+
+    /// `load` without the read, so an editor can validate before it writes.
+    static func parse(_ content: String, path url: URL) throws -> [String] {
         var sites = Set<String>()
         var invalid: [InvalidEntry] = []
         // components(separatedBy: .newlines) handles \n, \r, and \r\n uniformly.

@@ -305,7 +305,7 @@ private struct BlockListTab: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text("Saved. Changes take effect next time you toggle the block.")
+                    Text("Saved. Applies the next time the block turns on, including at the start of each work phase.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -353,12 +353,14 @@ private struct BlockListTab: View {
     private func save() {
         do {
             let url = try BlockList.ensureUserFile()
+            // Validate first and keep the last good file on disk. Writing an
+            // invalid list made every later `sudo focus block` fail, and the
+            // daemon only logs that, so whole sessions ran unblocked.
+            _ = try BlockList.parse(content, path: url)
             try content.write(to: url, atomically: true, encoding: .utf8)
-            // Validate by re-parsing — surfaces invalid hostnames inline.
-            _ = try BlockList.load(from: url)
             error = nil
         } catch {
-            self.error = error.localizedDescription
+            self.error = "Not saved: " + error.localizedDescription
         }
     }
 }
