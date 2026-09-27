@@ -11,8 +11,9 @@ enum PomodoroDaemon {
     /// CLI) could both pass `launch`'s "nothing running" check and leave an
     /// orphan daemon toggling /etc/hosts. The daemon itself never takes this
     /// lock, so waiting on it inside a locked command cannot deadlock.
-    private static func serialized<T>(_ body: () throws -> T) rethrows -> T {
-        try FileLock(path: Paths.pomodoroLock.path, timeout: 30).withExclusiveLock(body)
+    private static func serialized<T>(timeout: TimeInterval = 30,
+                                      _ body: () throws -> T) rethrows -> T {
+        try FileLock(path: Paths.pomodoroLock.path, timeout: timeout).withExclusiveLock(body)
     }
 
     /// Launch a new pomodoro. Writes state, forks a detached `_pomodoro-run` child,
@@ -185,11 +186,12 @@ enum PomodoroDaemon {
     /// every process in our process group. Callers follow this with their own
     /// `endSession` belt for a daemon that lost the signal race.
     private static func terminateDaemon(_ state: PomodoroSession.Active,
-                                        keepingMusic: Bool = false) {
+                                        keepingMusic: Bool = false,
+                                        waitingUpTo wait: TimeInterval = 15) {
         guard state.pid > 0,
               isOurProcess(pid: state.pid, expectedStart: state.daemonIdentity) else { return }
         _ = kill(state.pid, keepingMusic ? SIGUSR1 : SIGTERM)
-        let deadline = Date().addingTimeInterval(15)
+        let deadline = Date().addingTimeInterval(wait)
         while isOurProcess(pid: state.pid, expectedStart: state.daemonIdentity), Date() < deadline {
             usleep(50_000)
         }
@@ -262,17 +264,22 @@ enum PomodoroDaemon {
         ).run(workEnd: workEnd, breakEnd: breakEnd)
     }
 
-    static func stop() {
-        serialized { stopUnlocked() }
+    /// `quitting` is the menu bar app's `applicationWillTerminate`, which runs
+    /// on the main thread under the OS's termination deadline (logout and
+    /// shutdown kill a slow app). There, a bounded wait beats a complete one:
+    /// the `endSession` belt below still unblocks and clears if the daemon's
+    /// own teardown hasn't finished.
+    static func stop(quitting: Bool = false) {
+        serialized(timeout: quitting ? 2 : 30) { stopUnlocked(teardownWait: quitting ? 2 : 15) }
     }
 
-    private static func stopUnlocked() {
+    private static func stopUnlocked(teardownWait: TimeInterval) {
         let session = PomodoroSession.default
         guard let state = session.current else {
             print("focus: no pomodoro running")
             return
         }
-        terminateDaemon(state)
+        terminateDaemon(state, waitingUpTo: teardownWait)
         // The daemon now cleans up on SIGTERM itself; this is still the fallback
         // for a daemon that ignored or lost the race, and it's what clears the
         // state when the pid was recycled. Idempotent against signalCleanup.
