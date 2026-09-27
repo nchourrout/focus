@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum BlockList {
     /// Matches bare-ish hostnames. Rejects newlines, spaces, and shell metachars, which
@@ -50,8 +51,15 @@ enum BlockList {
         return dest
     }
 
+    /// A block file root refused to read. See `read(_:)`.
+    struct UnsafeFile: Error, LocalizedError {
+        let path: URL
+        let reason: String
+        var errorDescription: String? { "refusing to read \(path.path) as root: \(reason)" }
+    }
+
     static func load(from url: URL) throws -> [String] {
-        let content = try String(contentsOf: url, encoding: .utf8)
+        let content = try read(url)
         var sites = Set<String>()
         var invalid: [InvalidEntry] = []
         // components(separatedBy: .newlines) handles \n, \r, and \r\n uniformly.
@@ -67,5 +75,31 @@ enum BlockList {
         }
         guard invalid.isEmpty else { throw InvalidEntries(entries: invalid) }
         return sites.sorted()
+    }
+
+    /// Under sudo, root reads a file the user controls, and echoes back every
+    /// line that isn't a hostname. Without these checks a symlink or hard link
+    /// at that path would turn the passwordless `sudo focus block` into a way
+    /// to print any root-only file. So as root: no symlink at the final
+    /// component, a regular file, owned by the invoking user or by root.
+    static func read(_ url: URL) throws -> String {
+        guard geteuid() == 0 else { return try String(contentsOf: url, encoding: .utf8) }
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard fd >= 0 else {
+            throw UnsafeFile(path: url, reason: errno == ELOOP ? "it is a symlink" : String(cString: strerror(errno)))
+        }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+            throw UnsafeFile(path: url, reason: "not a regular file")
+        }
+        let invoker = ProcessInfo.processInfo.environment["SUDO_UID"].flatMap { uid_t($0) }
+        guard info.st_uid == 0 || info.st_uid == invoker else {
+            throw UnsafeFile(path: url, reason: "owned by uid \(info.st_uid)")
+        }
+        guard let content = String(data: try handle.readToEnd() ?? Data(), encoding: .utf8) else {
+            throw UnsafeFile(path: url, reason: "not UTF-8")
+        }
+        return content
     }
 }

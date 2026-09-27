@@ -106,7 +106,7 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
                 Log.terminate.warning("block still active on quit; sudoers drop-in missing, leaving /etc/hosts as-is")
                 return
             }
-            let result = Shell.run(Shell.Command(Paths.selfExecutable, ["unblock"], sudo: true))
+            let result = Shell.run(Shell.Command(Paths.sudoTarget, ["unblock"], sudo: true))
             if result.status != 0 {
                 Log.terminate.error("unblock-on-quit failed (status \(result.status, privacy: .public))")
             }

@@ -53,7 +53,8 @@ struct SiteBlock {
         try withHostsLock { try deactivateUnlocked() }
     }
 
-    /// Flip the block. Returns the new state (true = now blocking).
+    /// Flip the block. Returns the new state (true = now blocking). `sites`
+    /// is only evaluated when the flip is a block.
     ///
     /// One lock spans the isActive check and the write: checking outside would
     /// race a concurrent writer between check and mutate, double-toggling or
@@ -62,13 +63,13 @@ struct SiteBlock {
     /// file description — nesting two acquisitions in this process would
     /// deadlock against itself.
     @discardableResult
-    func toggle(sites: [String], doh: Bool = true) throws -> Bool {
+    func toggle(sites: @autoclosure () throws -> [String], doh: Bool = true) throws -> Bool {
         try withHostsLock {
             if isActive {
                 try deactivateUnlocked()
                 return false
             } else {
-                _ = try activateUnlocked(sites: sites, doh: doh)
+                _ = try activateUnlocked(sites: try sites(), doh: doh)
                 return true
             }
         }

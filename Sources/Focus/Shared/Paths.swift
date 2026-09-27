@@ -6,9 +6,23 @@ enum Paths {
 
     /// Advisory lock serializing concurrent /etc/hosts mutations (daemon phase
     /// boundaries vs menu bar toggle vs a terminal's `focus toggle`). Lives in
-    /// /tmp: recreated on reboot, and only ever touched by root, since every
-    /// mutating command requires sudo.
-    static let hostsLockPath = "/tmp/com.nchourrout.focus.hosts.lock"
+    /// /var/run, which only root (and group daemon) can write: in /tmp any
+    /// user could create it first and hold the lock, stalling every unblock.
+    static let hostsLockPath = "/var/run/com.nchourrout.focus.hosts.lock"
+
+    /// Root-owned copy of the binary, the only path the sudoers rule trusts.
+    /// See `SudoersInstaller`.
+    static let privilegedHelperDir = "/Library/PrivilegedHelperTools/com.nchourrout.focus"
+    static var privilegedHelper: URL {
+        URL(fileURLWithPath: privilegedHelperDir).appendingPathComponent("focus")
+    }
+
+    /// What to run under `sudo -n`: the helper once installed, else the running
+    /// binary, which is what drop-ins written before the helper existed name.
+    static var sudoTarget: URL {
+        FileManager.default.isExecutableFile(atPath: privilegedHelper.path)
+            ? privilegedHelper : selfExecutable
+    }
 
     static var pomodoroState: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".focus-pomodoro.json")
@@ -26,13 +40,25 @@ enum Paths {
     }
 
     /// ~/Library/Application Support/Focus, the one directory Focus writes to.
-    /// Resolved against the login user's home (NSHomeDirectoryForUser) so that
+    /// Resolved against the login user's home (`loginUser`) so that
     /// running under sudo doesn't steer the path into /var/root — everything
     /// below derives from here so no new file can miss that.
     static var appSupport: URL {
-        let home = NSHomeDirectoryForUser(NSUserName()) ?? NSHomeDirectory()
+        let home = NSHomeDirectoryForUser(loginUser) ?? NSHomeDirectory()
         return URL(fileURLWithPath: home)
             .appendingPathComponent("Library/Application Support/Focus")
+    }
+
+    /// The user Focus acts for. Under sudo the process runs as root and
+    /// NSUserName() says "root", which would steer every path into /var/root
+    /// and silently swap the user's block list for the bundled one. sudo sets
+    /// SUDO_USER itself, and the rule only admits the invoking user, so it is
+    /// trustworthy here.
+    static var loginUser: String {
+        if geteuid() == 0, let user = ProcessInfo.processInfo.environment["SUDO_USER"], !user.isEmpty {
+            return user
+        }
+        return NSUserName()
     }
 
     /// User-writable block list.

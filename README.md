@@ -41,7 +41,7 @@ cd ~/dev/focus
 open /Applications/Focus.app
 ```
 
-The first time you toggle the block, Focus pops a native admin password dialog and installs `/etc/sudoers.d/focus`; after that everything runs silently. `install.sh` strips the quarantine flag — if you ever see "Focus can't be opened because Apple cannot check it," run `sudo xattr -dr com.apple.quarantine /Applications/Focus.app`.
+The first time you toggle the block, Focus pops a native admin password dialog, copies its binary to the root-owned `/Library/PrivilegedHelperTools/com.nchourrout.focus/`, and installs `/etc/sudoers.d/focus` pointing at that copy; after that everything runs silently. The rule never names the binary in `/Applications`, which the user can overwrite. `install.sh` refreshes the copy on upgrade; with a zip upgrade, Settings shows "needs update" until you click Update. `install.sh` strips the quarantine flag — if you ever see "Focus can't be opened because Apple cannot check it," run `sudo xattr -dr com.apple.quarantine /Applications/Focus.app`.
 
 > KeyboardShortcuts is pinned to 1.15.0 so Command Line Tools stay sufficient. 1.16.0+ use the `#Preview` macro and 3.x also uses SwiftUI's `@Entry`; both need macro plugins that ship only with the full Xcode.
 
