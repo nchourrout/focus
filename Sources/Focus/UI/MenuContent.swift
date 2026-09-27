@@ -6,7 +6,7 @@ struct MenuContent: View {
     @Environment(\.openWindow) private var openWindow
     /// Today's focused minutes, read once per menu open (onAppear). Kept out of
     /// AppState so the 1 Hz tick never touches the history file.
-    @State private var todaysFocus: SessionHistory.Totals?
+    @ViewState private var todaysFocus: SessionHistory.Totals?
 
     var body: some View {
         // Note: no `keyboardShortcut(...)` on the action buttons — those would
