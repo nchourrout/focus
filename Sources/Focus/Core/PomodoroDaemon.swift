@@ -5,10 +5,25 @@ import Darwin
 /// plan, and stop it again. The loop the daemon actually runs lives in
 /// `SessionRunner`.
 enum PomodoroDaemon {
+    /// Serializes the lifecycle commands against each other. Each one reads the
+    /// state file, decides, signals or spawns, then writes it back; two of them
+    /// interleaving (a hotkey and a menu click, a notification action and the
+    /// CLI) could both pass `launch`'s "nothing running" check and leave an
+    /// orphan daemon toggling /etc/hosts. The daemon itself never takes this
+    /// lock, so waiting on it inside a locked command cannot deadlock.
+    private static func serialized<T>(timeout: TimeInterval = 30,
+                                      _ body: () throws -> T) rethrows -> T {
+        try FileLock(path: Paths.pomodoroLock.path, timeout: timeout).withExclusiveLock(body)
+    }
+
     /// Launch a new pomodoro. Writes state, forks a detached `_pomodoro-run` child,
     /// and returns. Recovers from a stale state file (dead PID) by clearing and
     /// proceeding.
     static func launch(_ plan: PomodoroPlan) throws {
+        try serialized { try launchUnlocked(plan) }
+    }
+
+    private static func launchUnlocked(_ plan: PomodoroPlan) throws {
         let session = PomodoroSession.default
         if let existing = session.current {
             // A paused record has no live daemon by design, so the liveness probe
@@ -42,6 +57,10 @@ enum PomodoroDaemon {
     /// stops) but keep the record on disk, marked paused, so `resume` can
     /// rebuild deadlines and spawn a fresh daemon.
     static func pause() {
+        serialized { pauseUnlocked() }
+    }
+
+    private static func pauseUnlocked() {
         let session = PomodoroSession.default
         guard let current = session.current,
               !SessionStaleness.isStale(current)
@@ -83,6 +102,10 @@ enum PomodoroDaemon {
     /// Continue a paused session: shift the stored deadlines by the elapsed
     /// gap and spawn a fresh daemon for them.
     static func resume() throws {
+        try serialized { try resumeUnlocked() }
+    }
+
+    private static func resumeUnlocked() throws {
         let session = PomodoroSession.default
         // `resumed` returns nil for anything that isn't paused, which is the
         // same condition the message describes — one guard covers both.
@@ -105,6 +128,10 @@ enum PomodoroDaemon {
     /// of one run (see `PomodoroPlan`). Only the cadence is read fresh,
     /// matching how every other phase boundary behaves.
     static func skipBreak() throws {
+        try serialized { try skipBreakUnlocked() }
+    }
+
+    private static func skipBreakUnlocked() throws {
         let session = PomodoroSession.default
         guard let current = session.current,
               !SessionStaleness.isStale(current)
@@ -139,7 +166,7 @@ enum PomodoroDaemon {
         print("focus: break skipped — starting session \(next.sessionNumber)")
     }
 
-    /// Signal the daemon behind `state` and wait up to a second for it to go.
+    /// Signal the daemon behind `state` and wait for it to go.
     ///
     /// `keepingMusic` picks which signal, and so which teardown the daemon runs:
     /// SIGTERM stops everything, SIGUSR1 asks for a handoff that leaves playback
@@ -148,18 +175,25 @@ enum PomodoroDaemon {
     /// which lands in the same place by accident: the caller's `endSession` belt
     /// does the unblock, and the music it never touched carries on.
     ///
+    /// The wait has to cover the daemon's whole teardown, not just the signal:
+    /// its `sudo unblock` can sit on the hosts lock and a DNS flush for
+    /// seconds. Returning early let that teardown land after the caller had
+    /// moved on, unblocking the successor's work phase or deleting the record
+    /// `pause` had just written. 15s outlasts the hosts lock's own 10s cap.
+    ///
     /// Only signal if the PID is still ours; skip if the PID has been recycled.
     /// The `pid > 0` check is a defensive belt: `kill(0, SIGTERM)` would signal
     /// every process in our process group. Callers follow this with their own
     /// `endSession` belt for a daemon that lost the signal race.
     private static func terminateDaemon(_ state: PomodoroSession.Active,
-                                        keepingMusic: Bool = false) {
+                                        keepingMusic: Bool = false,
+                                        waitingUpTo wait: TimeInterval = 15) {
         guard state.pid > 0,
               isOurProcess(pid: state.pid, expectedStart: state.daemonIdentity) else { return }
         _ = kill(state.pid, keepingMusic ? SIGUSR1 : SIGTERM)
-        for _ in 0..<10 {
-            usleep(100_000)
-            if !isPIDAlive(state.pid) { break }
+        let deadline = Date().addingTimeInterval(wait)
+        while isOurProcess(pid: state.pid, expectedStart: state.daemonIdentity), Date() < deadline {
+            usleep(50_000)
         }
     }
 
@@ -173,7 +207,10 @@ enum PomodoroDaemon {
     private static func spawn(active: PomodoroSession.Active) throws {
         var args = [
             "_pomodoro-run",
-            "--goal", active.goal,
+            // One token: ArgumentParser reads a separate value starting with
+            // "-" as an option, so a goal like "-10% latency" made the daemon
+            // fail to parse and exit before it blocked anything.
+            "--goal=\(active.goal)",
             "--work-end", String(active.workEnd),
             "--break-end", String(active.breakEnd),
             "--work-minutes", String(active.effectiveWorkMinutes),
@@ -227,13 +264,22 @@ enum PomodoroDaemon {
         ).run(workEnd: workEnd, breakEnd: breakEnd)
     }
 
-    static func stop() {
+    /// `quitting` is the menu bar app's `applicationWillTerminate`, which runs
+    /// on the main thread under the OS's termination deadline (logout and
+    /// shutdown kill a slow app). There, a bounded wait beats a complete one:
+    /// the `endSession` belt below still unblocks and clears if the daemon's
+    /// own teardown hasn't finished.
+    static func stop(quitting: Bool = false) {
+        serialized(timeout: quitting ? 2 : 30) { stopUnlocked(teardownWait: quitting ? 2 : 15) }
+    }
+
+    private static func stopUnlocked(teardownWait: TimeInterval) {
         let session = PomodoroSession.default
         guard let state = session.current else {
             print("focus: no pomodoro running")
             return
         }
-        terminateDaemon(state)
+        terminateDaemon(state, waitingUpTo: teardownWait)
         // The daemon now cleans up on SIGTERM itself; this is still the fallback
         // for a daemon that ignored or lost the race, and it's what clears the
         // state when the pid was recycled. Idempotent against signalCleanup.
@@ -267,7 +313,7 @@ enum PomodoroDaemon {
         SessionRunner.recordPartialIfNeeded(clearing: session, now: Date().timeIntervalSince1970)
         SessionRunner.endSession(
             unblock: plan.block, stopMusic: !keepMusic, clearing: session,
-            effects: LiveSessionEffects()
+            effects: LiveSessionEffects(), owner: getpid()
         )
         exit(0)
     }

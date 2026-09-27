@@ -117,6 +117,12 @@ final class AppState: ObservableObject {
             if s.block && newBlock {
                 Actions.spawnSudo(["unblock"])
             }
+            // Playback is a detached process of its own, so it outlives the
+            // daemon that started it. Only stop it when it is still that
+            // session's station, not something started separately since.
+            if let music = s.music, LocalPlayback.playing.station?.uri == music {
+                LocalPlayback.stop()
+            }
             if wasApplied {
                 LocalNotifications.post(
                     title: "Session interrupted",

@@ -93,7 +93,7 @@ final class FocusAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
     /// toggle.
     func applicationWillTerminate(_ notification: Notification) {
         if PomodoroSession.default.current != nil {
-            PomodoroDaemon.stop()
+            PomodoroDaemon.stop(quitting: true)
         }
         // Playback lives in a detached, setsid'd subprocess, so it keeps going
         // after we exit unless it is killed by PID. The teardown above already

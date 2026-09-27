@@ -391,4 +391,35 @@ private final class FakeEffects: SessionEffects {
 
         #expect(history.entries().isEmpty, "a break is not work")
     }
+
+    // MARK: endSession ownership
+
+    @Test func aLateTeardownLeavesTheSuccessorsRecordAlone() throws {
+        let session = try makeSession()
+        let effects = FakeEffects(clock: Self.start, cadence: makeCadence(keepCycling: false))
+        // The record now belongs to a replacement daemon (skip-break, resume).
+        var successor = try #require(session.current)
+        successor.pid = 5151
+        try session.save(successor)
+        SessionRunner.endSession(unblock: true, clearing: session, effects: effects, owner: 4242)
+        #expect(session.current?.pid == 5151)
+        #expect(effects.events.contains(.removeBlock))
+    }
+
+    @Test func aLateTeardownLeavesAPausedRecordAlone() throws {
+        let session = try makeSession()
+        let effects = FakeEffects(clock: Self.start, cadence: makeCadence(keepCycling: false))
+        var paused = try #require(session.current)
+        paused.pausedAt = Self.start + 60
+        try session.save(paused)
+        SessionRunner.endSession(unblock: true, clearing: session, effects: effects, owner: 4242)
+        #expect(session.current?.pausedAt != nil)
+    }
+
+    @Test func anOwnerClearsItsOwnRecord() throws {
+        let session = try makeSession()
+        SessionRunner.endSession(unblock: false, clearing: session,
+                                 effects: FakeEffects(clock: Self.start, cadence: makeCadence(keepCycling: false)), owner: 4242)
+        #expect(session.current == nil)
+    }
 }

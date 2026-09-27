@@ -47,10 +47,19 @@ struct SessionRunner {
     ///
     /// Static because `PomodoroDaemon` ends sessions it never ran: a stale one at
     /// launch, and the one `stop` signals.
+    ///
+    /// `owner` is for a daemon ending its own run: the record is only cleared
+    /// while it still names that pid and isn't paused. A late teardown must
+    /// not delete the record a successor (skip-break, resume) or `pause` has
+    /// already written in its place.
     static func endSession(unblock: Bool, stopMusic: Bool = true,
-                           clearing session: PomodoroSession, effects: SessionEffects) {
+                           clearing session: PomodoroSession, effects: SessionEffects,
+                           owner: Int32? = nil) {
         if unblock { effects.removeBlock() }
         if stopMusic { effects.stopMusic() }
+        if let owner {
+            guard let current = session.current, current.pid == owner, current.pausedAt == nil else { return }
+        }
         session.clear()
     }
 

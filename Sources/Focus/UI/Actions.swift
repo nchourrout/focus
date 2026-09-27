@@ -31,7 +31,8 @@ enum Actions {
     /// settings we would (see `PomodoroPlan`), so passing them here would just be
     /// a second place for the rules to drift.
     static func startPomodoro(goal: String) {
-        spawn(["pomodoro", "start", goal])
+        // `--` so a goal starting with "-" is read as the goal, not an option.
+        spawn(["pomodoro", "start", "--", goal])
     }
 
     static func stopPomodoro() {
@@ -83,7 +84,7 @@ enum Actions {
             let handle = try Shell.spawn(command)
             handle.onExit { status, stdout in
                 if status != 0 {
-                    Task { @MainActor in showSudoersMissingAlert() }
+                    reportPrivilegedFailure("toggle")
                     return
                 }
                 // Decode the documented payload rather than substring-matching
@@ -182,11 +183,35 @@ enum Actions {
             let handle = try Shell.spawn(Shell.Command(Paths.sudoTarget, args, sudo: true))
             handle.onExit { status, _ in
                 guard status != 0 else { return }
-                Task { @MainActor in showSudoersMissingAlert() }
+                reportPrivilegedFailure(args.first ?? "?")
             }
         } catch {
             Log.actions.error("sudo spawn \(args.first ?? "?", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             showSudoersMissingAlert()
+        }
+    }
+
+    /// A failed `sudo -n` is either sudo refusing (no rule, or a rule for
+    /// another path) or the command itself failing, usually on an invalid block
+    /// list. Sending the second case to "grant permission" had users reinstall
+    /// sudoers for a typo. `sudo -n -l` answers which one without a prompt.
+    /// Runs on the exit handler's thread, off the main actor.
+    nonisolated private static func reportPrivilegedFailure(_ action: String) {
+        let probe = Shell.run(Shell.Command(
+            path: "/usr/bin/sudo", ["-n", "-l", Paths.sudoTarget.path, "toggle", "--json"]
+        ))
+        Log.actions.error("sudo \(action, privacy: .public) failed; permitted: \(probe.status == 0, privacy: .public)")
+        Task { @MainActor in
+            if probe.status != 0 {
+                showSudoersMissingAlert()
+            } else {
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = "Focus couldn't change the block"
+                alert.informativeText = "Permission is fine, but the command failed. The usual cause is an invalid line in the block list: check Settings → Block list."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
         }
     }
 

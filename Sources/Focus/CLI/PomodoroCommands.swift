@@ -120,10 +120,24 @@ extension Pomodoro {
                 }
                 return
             }
-            let (phase, timeLeft) = session.phase(of: state)
+            // A record whose daemon died (crash, kill -9, reboot) is a
+            // leftover, not a session: report it as such instead of a live
+            // countdown. The menu bar clears it on its next tick.
+            if SessionStaleness.isStale(state) {
+                if json {
+                    print("{\"running\": false, \"stale\": true}")
+                } else {
+                    print("focus: no pomodoro running (leftover state from a session that ended unexpectedly)")
+                }
+                return
+            }
+            // Paused: the clock stopped at `pausedAt`, so read time left there.
+            let paused = state.pausedAt != nil
+            let (phase, timeLeft) = session.phase(of: state, at: state.pausedAt ?? Date().timeIntervalSince1970)
             if json {
                 let payload = StatusPayload(
                     running: true,
+                    paused: paused,
                     goal: state.goal,
                     phase: phase.rawValue,
                     time_left: Int(timeLeft.rounded()),
@@ -138,13 +152,15 @@ extension Pomodoro {
             } else {
                 let mins = Int(timeLeft) / 60
                 let secs = Int(timeLeft) % 60
-                print(String(format: "focus: %@ — %d:%02d left — session %d — %@",
-                             phase.rawValue, mins, secs, state.sessionNumber, state.goal))
+                print(String(format: "focus: %@%@ — %d:%02d left — session %d — %@",
+                             phase.rawValue, paused ? " (paused)" : "",
+                             mins, secs, state.sessionNumber, state.goal))
             }
         }
 
         private struct StatusPayload: Encodable {
             let running: Bool
+            let paused: Bool
             let goal: String
             let phase: String
             let time_left: Int

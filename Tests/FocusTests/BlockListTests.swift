@@ -90,4 +90,12 @@ import Foundation
             _ = try BlockList.load(from: tmp)
         }
     }
+
+    @Test func parseValidatesWithoutTouchingDisk() throws {
+        let url = URL(fileURLWithPath: "/nonexistent/block.txt")
+        #expect(try BlockList.parse("x.com\n# note\nwww.y.com\n", path: url) == ["x.com", "y.com"])
+        #expect(throws: BlockList.InvalidEntries.self) {
+            _ = try BlockList.parse("x.com\nnot a host\n", path: url)
+        }
+    }
 }
