@@ -22,6 +22,11 @@ jobs:
         run: |
           swift --version
           xcodebuild -version
+      # CI builds with Xcode, which has the SwiftUI macro plugins, so a bare
+      # `@State` would pass here and still break Command Line Tools builds on
+      # the macOS 27 SDK. See Sources/Focus/UI/ViewState.swift.
+      - name: No bare @State
+        run: "! grep -rnE '@State( |$)' Sources"
       - name: Build
         run: swift build -c release
       - name: Run unit tests

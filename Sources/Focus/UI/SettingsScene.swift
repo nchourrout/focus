@@ -27,8 +27,8 @@ struct SettingsContent: View {
 private struct GeneralTab: View {
     /// Bumped after SMAppService or sudoers-drop-in state changes, so the
     /// read-only computed properties re-evaluate.
-    @State private var refreshTick = 0
-    @State private var installError: String?
+    @ViewState private var refreshTick = 0
+    @ViewState private var installError: String?
 
     var body: some View {
         Form {
@@ -258,10 +258,10 @@ private struct ShortcutsTab: View {
 }
 
 private struct BlockListTab: View {
-    @State private var content: String = ""
-    @State private var error: String?
-    @State private var loaded = false
-    @State private var saveTask: Task<Void, Never>?
+    @ViewState private var content: String = ""
+    @ViewState private var error: String?
+    @ViewState private var loaded = false
+    @ViewState private var saveTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

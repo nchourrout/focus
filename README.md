@@ -27,7 +27,7 @@ The app is unsigned, so Gatekeeper blocks the first launch until that `xattr` ru
 
 ## Build & install
 
-Requires macOS 13+ and Swift 5.10+. Command Line Tools are enough to build; `swift test` needs a full Xcode.
+Requires macOS 13+ and Swift 5.10+. Command Line Tools are enough to build and test (checked on macOS 27 with Swift 6.4). Views use `@ViewState` rather than `@State`: on the macOS 27 SDK `@State` is a macro whose plugin ships only with Xcode.
 
 ```bash
 git clone git@github.com:nchourrout/focus.git ~/dev/focus

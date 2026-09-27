@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UserNotifications
 
@@ -154,7 +155,7 @@ struct StatusLabel: View {
 
 private struct CountdownText: View {
     let pomodoro: PomodoroSession.Active
-    @State private var now: Date = Date()
+    @ViewState private var now: Date = Date()
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
