@@ -20,6 +20,11 @@ jobs:
       REF: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The job holds contents: write while `swift test` and `swift build`
+          # run third-party package code. Keep the token out of .git/config;
+          # only the final `gh release` step needs it, and gets it via env.
+          persist-credentials: false
 
       - name: Show Swift / Xcode versions
         run: |

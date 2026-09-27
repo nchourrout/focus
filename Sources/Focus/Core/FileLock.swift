@@ -13,19 +13,36 @@ import Darwin
 /// must keep its isActive check and its write atomic together).
 struct FileLock {
     let path: String
+    /// How long to wait for a holder before giving up and running unlocked.
+    /// Any stall here stalls the daemon's phase boundary, and an unblock that
+    /// never comes is worse than the race the lock exists to close.
+    var timeout: TimeInterval = 10
 
     /// Run `body` holding an exclusive lock on `path`. Best effort: if the lock
-    /// file cannot be opened or flocked (unwritable /tmp is about the only way,
-    /// and every mutator runs as root), `body` runs unlocked anyway rather than
-    /// making block/unblock unavailable. The race window it leaves open is the
-    /// pre-existing behaviour; losing the ability to unblock would be worse.
+    /// file cannot be opened, or is still held after `timeout`, `body` runs
+    /// unlocked anyway rather than making block/unblock unavailable. The race
+    /// window it leaves open is the pre-existing behaviour; losing the ability
+    /// to unblock would be worse. O_NOFOLLOW keeps root from following a
+    /// planted symlink and creating a file somewhere else.
     func withExclusiveLock<T>(_ body: () throws -> T) rethrows -> T {
-        let fd = open(path, O_RDWR | O_CREAT, 0o644)
+        let fd = open(path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o644)
         guard fd >= 0 else { return try body() }
         defer { close(fd) }
-        if flock(fd, LOCK_EX) != 0 { return try body() }
+        guard acquire(fd) else {
+            Log.daemon.error("hosts lock \(path, privacy: .public) still held after \(timeout, privacy: .public)s; proceeding unlocked")
+            return try body()
+        }
         defer { flock(fd, LOCK_UN) }
         return try body()
+    }
+
+    private func acquire(_ fd: Int32) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            guard errno == EWOULDBLOCK || errno == EINTR, Date() < deadline else { return false }
+            usleep(50_000)
+        }
+        return true
     }
 
 }

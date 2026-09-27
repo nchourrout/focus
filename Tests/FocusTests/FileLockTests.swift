@@ -46,6 +46,25 @@ import Darwin
         #expect(try lock.withExclusiveLock { "ran" } == "ran")
     }
 
+    @Test func aLockHeldPastTheTimeoutStillRunsTheBody() throws {
+        let path = try makePath()
+        let holder = open(path, O_RDWR | O_CREAT, 0o644)
+        defer { close(holder) }
+        #expect(flock(holder, LOCK_EX) == 0)
+        var lock = FileLock(path: path)
+        lock.timeout = 0.2
+        #expect(try lock.withExclusiveLock { "ran" } == "ran",
+                "a holder that never lets go must not wedge block/unblock")
+    }
+
+    @Test func aSymlinkAtTheLockPathIsNotFollowed() throws {
+        let path = try makePath()
+        let target = path + "-target"
+        try FileManager.default.createSymbolicLink(atPath: path, withDestinationPath: target)
+        _ = try FileLock(path: path).withExclusiveLock { 0 }
+        #expect(!FileManager.default.fileExists(atPath: target), "the lock must not create the symlink's target")
+    }
+
     @Test func bodyThrowingPropagatesAndReleases() throws {
         let lock = FileLock(path: try makePath())
         struct Boom: Error {}

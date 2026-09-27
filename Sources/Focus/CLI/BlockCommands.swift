@@ -57,17 +57,15 @@ struct ToggleCommand: ParsableCommand {
 
     func run() throws {
         try requireRoot()
-        let nowActive: Bool
-        if SiteBlock.default.isActive {
-            try SiteBlock.default.deactivate()
-            nowActive = false
-        } else {
+        // SiteBlock.toggle holds one lock across the check and the write; the
+        // list is only read when the toggle turns out to be a block, so a bad
+        // list never stands in the way of unblocking.
+        let nowActive = try SiteBlock.default.toggle(sites: {
             let url = try resolveBlockFile(file)
             let sites = try BlockList.load(from: url)
             if sites.isEmpty { throw CLIError.emptyBlockList(url) }
-            try SiteBlock.default.activate(sites: sites, doh: blockDoh)
-            nowActive = true
-        }
+            return sites
+        }(), doh: blockDoh)
         if json {
             printJSONActive(nowActive)
         } else {

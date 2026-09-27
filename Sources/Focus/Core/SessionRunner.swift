@@ -219,7 +219,7 @@ struct LiveSessionEffects: SessionEffects {
     /// ("a password is required" reads very differently from a missing binary).
     func applyBlock() {
         let result = Shell.run(Shell.Command(
-            Paths.selfExecutable,
+            Paths.sudoTarget,
             ["block"] + Defaults.dohSuppressionFlags,
             sudo: true,
             captureStderr: true
@@ -229,7 +229,7 @@ struct LiveSessionEffects: SessionEffects {
             """
             sudo -n block failed (status \(result.status, privacy: .public)); \
             sites are NOT blocked. Is /etc/sudoers.d/focus installed and does it \
-            list \(Paths.selfExecutable.path, privacy: .public)? \
+            list \(Paths.sudoTarget.path, privacy: .public)? \
             stderr: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines), privacy: .public)
             """
         )
@@ -239,7 +239,7 @@ struct LiveSessionEffects: SessionEffects {
     /// blocked is a harmless no-op.
     func removeBlock() {
         let result = Shell.run(Shell.Command(
-            Paths.selfExecutable, ["unblock"], sudo: true, captureStderr: true
+            Paths.sudoTarget, ["unblock"], sudo: true, captureStderr: true
         ))
         guard result.status != 0 else { return }
         Log.daemon.error(

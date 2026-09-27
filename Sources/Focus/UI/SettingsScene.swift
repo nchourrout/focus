@@ -82,16 +82,16 @@ private struct GeneralTab: View {
                 Toggle("Launch at login", isOn: launchAtLoginBinding)
 
                 LabeledContent {
-                    Button(permissionInstalled ? "Reinstall…" : "Grant…") {
+                    Button(permissionButtonTitle) {
                         installPermission()
                     }
                 } label: {
                     Label {
-                        Text(permissionInstalled ? "Granted" : "Not granted")
+                        Text(permissionLabel)
                     } icon: {
-                        Image(systemName: permissionInstalled
+                        Image(systemName: permissionStatus == .current
                               ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(permissionInstalled ? .green : .orange)
+                            .foregroundStyle(permissionStatus == .current ? .green : .orange)
                     }
                 }
 
@@ -129,9 +129,27 @@ private struct GeneralTab: View {
         return "Runs continuously, taking a \(longBreakMinutes) min break after every \(sessions) instead of \(breakMinutes) min."
     }
 
-    private var permissionInstalled: Bool {
+    private var permissionStatus: SudoersInstaller.Status {
         _ = refreshTick
-        return SudoersInstaller.isInstalled
+        return SudoersInstaller.status
+    }
+
+    private var permissionLabel: String {
+        switch permissionStatus {
+        case .missing: return "Not granted"
+        // Still works, but runs an older build of the helper, or trusts the
+        // user-writable binary (drop-ins from before the helper existed).
+        case .outdated: return "Granted, needs update"
+        case .current: return "Granted"
+        }
+    }
+
+    private var permissionButtonTitle: String {
+        switch permissionStatus {
+        case .missing: return "Grant…"
+        case .outdated: return "Update…"
+        case .current: return "Reinstall…"
+        }
     }
 
     private func installPermission() {

@@ -74,7 +74,7 @@ enum Actions {
     /// but only after AppState's next 1Hz refresh).
     static func toggleBlock() {
         let command = Shell.Command(
-            Paths.selfExecutable,
+            Paths.sudoTarget,
             ["toggle", "--json"] + Defaults.dohSuppressionFlags,
             sudo: true,
             captureStdout: true
@@ -179,7 +179,7 @@ enum Actions {
     /// on the user's behalf after cleaning up a crashed session.
     static func spawnSudo(_ args: [String]) {
         do {
-            let handle = try Shell.spawn(Shell.Command(Paths.selfExecutable, args, sudo: true))
+            let handle = try Shell.spawn(Shell.Command(Paths.sudoTarget, args, sudo: true))
             handle.onExit { status, _ in
                 guard status != 0 else { return }
                 Task { @MainActor in showSudoersMissingAlert() }
