@@ -36,7 +36,7 @@ enum StreamPlayer {
         var failures = 0
         while true {
             let connectedAt = Date().timeIntervalSince1970
-            playOnce(url: streamURL)
+            playOnce(url: streamURL, stallTimeout: policy.stallTimeout)
 
             // The connection is over. If that is because we are stopping, there
             // is nothing left to fade and nothing to reconnect to.
@@ -74,7 +74,14 @@ enum StreamPlayer {
     /// only ever moves its `status` to `.failed`, and posts no notification. The
     /// first version of this watched the notification alone and so sat forever on
     /// an unreachable URL.
-    private static func playOnce(url: URL) {
+    ///
+    /// A third way ends in neither: a stall on a bad connection. The player
+    /// logged `stream stalled`, the item never failed, and the music stayed
+    /// silent for good instead of reconnecting. Any stretch of `stallTimeout`
+    /// without the playhead moving now ends the connection, which hands it to
+    /// the reconnect loop. That covers a connection that never starts playing,
+    /// too.
+    private static func playOnce(url: URL, stallTimeout: TimeInterval) {
         let item = AVPlayerItem(url: url)
         let player = AVPlayer(playerItem: item)
         // Live radio: prefer instant start over buffer-to-avoid-stalls.
@@ -105,11 +112,28 @@ enum StreamPlayer {
             },
             center.addObserver(forName: AVPlayerItem.playbackStalledNotification,
                                object: item, queue: .main) { _ in
-                // Stalls happen, and AVPlayer usually recovers on its own. Only a
-                // terminal failure moves to the next connection.
+                // The stall watchdog below decides what to do about it.
                 Log.playback.notice("stream stalled")
             },
         ]
+
+        // The playhead cannot move past what has been buffered, so one that
+        // stands still is a stall however AVPlayer reports it. Player state is
+        // not trusted for this: `timeControlStatus` was seen reading `.playing`
+        // on a connection that played nothing. Checked once a second, on main
+        // like `ended`.
+        var lastPlayhead = player.currentTime()
+        var lastProgressAt = Date()
+        let stallWatchdog = Timer(timeInterval: 1, repeats: true) { _ in
+            let playhead = player.currentTime()
+            if playhead != lastPlayhead {
+                lastPlayhead = playhead
+                lastProgressAt = Date()
+            } else if Date().timeIntervalSince(lastProgressAt) >= stallTimeout {
+                endConnection("no playback progress for \(Int(stallTimeout))s")
+            }
+        }
+        runLoop.add(stallWatchdog, forMode: .default)
         let statusObserver = item.observe(\.status, options: [.initial, .new]) { item, _ in
             guard item.status == .failed else { return }
             let reason = item.error?.localizedDescription ?? "unknown"
@@ -119,6 +143,7 @@ enum StreamPlayer {
         }
         defer {
             statusObserver.invalidate()
+            stallWatchdog.invalidate()
             observers.forEach(center.removeObserver)
             // Drop the fade before the player: a timer left running would keep
             // writing volume into a connection that is already over.
@@ -251,21 +276,30 @@ enum StreamPlayer {
 /// How many times a failing stream reconnects, and how long it waits between
 /// tries. Pure so the schedule is testable without AVFoundation.
 ///
-/// Defaults give five total attempts spaced 1s/2s/4s/8s apart, enough to ride
-/// out a router blip or SomaFM restarting a mountpoint, without hanging onto a
-/// dead URL all session. Callers pair it with a fresh-budget rule: a connection
-/// that held for more than a minute resets the failure count, so isolated
-/// dropouts never accumulate toward giving up.
+/// Defaults give twelve total attempts, backing off 1s/2s/4s/8s/16s and then
+/// every 30s, about three and a half minutes in all. That rides out a Wi-Fi
+/// drop or a flaky connection, not just a router blip, without hanging onto a
+/// dead URL all session. The first version gave up after 15s, so a connection
+/// that was down for longer than that never got its music back. Callers pair
+/// it with a fresh-budget rule: a connection that held for more than a minute
+/// resets the failure count, so isolated dropouts never accumulate toward
+/// giving up.
 struct ReconnectPolicy {
     /// Total attempts allowed, counting the first.
-    var maxAttempts: Int = 5
+    var maxAttempts: Int = 12
     /// Wait before the second attempt; each later attempt doubles it.
     var baseDelay: TimeInterval = 1
+    /// Ceiling on the doubling, so a long outage is retried at a steady pace.
+    var maxDelay: TimeInterval = 30
+    /// How long a connection may go without playing before it counts as
+    /// failed. Long enough for a slow first buffer, short enough that a stall
+    /// is a pause and not the end of the music.
+    var stallTimeout: TimeInterval = 15
 
     /// Backoff before the next try, given how many times the stream has failed
     /// so far (1-based). Nil means the budget is spent: give up.
     func retryDelay(failureNumber: Int) -> TimeInterval? {
         guard failureNumber <= maxAttempts - 1 else { return nil }
-        return baseDelay * pow(2, Double(failureNumber - 1))
+        return min(baseDelay * pow(2, Double(failureNumber - 1)), maxDelay)
     }
 }
