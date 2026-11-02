@@ -68,16 +68,17 @@ final class AppState: ObservableObject {
         heartbeat.tolerance = 1
         RunLoop.main.add(heartbeat, forMode: .common)
         self.heartbeat = heartbeat
-        // The state and PID files sit in the home directory, the task list in
-        // Application Support. /etc is a symlink, and the watcher needs the
-        // directory /etc/hosts is really renamed into. Application Support may
-        // not exist yet on a fresh install, and a directory that isn't there
-        // can't be watched.
+        // The state and PID files sit in the home directory, the task list and
+        // history in Application Support. Application Support may not exist
+        // yet on a fresh install, and a directory that isn't there can't be
+        // watched.
         try? FileManager.default.createDirectory(at: Paths.appSupport, withIntermediateDirectories: true)
-        watcher = DirectoryWatcher(directories: [
-            FileManager.default.homeDirectoryForCurrentUser.path,
-            Paths.appSupport.path,
-            Paths.hosts.resolvingSymlinksInPath().deletingLastPathComponent().path,
+        watcher = DirectoryWatcher(files: [
+            Paths.pomodoroState,
+            Paths.musicPid,
+            Paths.todos,
+            Paths.history,
+            Paths.hosts,
         ]) { [weak self] in
             Task { await self?.refresh() }
         }

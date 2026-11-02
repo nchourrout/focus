@@ -215,7 +215,8 @@ struct PomodoroRun: ParsableCommand {
 extension Pomodoro.Start {
     func resolvedGoal(list: TodoList = .default) throws -> String {
         if let goal { return goal }
-        let items = list.items()
+        // `load`, not `items`: a damaged file should say so, not "no task N".
+        let items = try list.load()
         guard let todo, todo >= 1, todo <= items.count else {
             throw ValidationError("no task \(todo ?? 0); `focus todo` lists them")
         }

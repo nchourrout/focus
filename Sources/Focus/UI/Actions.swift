@@ -169,29 +169,6 @@ enum Actions {
     // The write is atomic and locked against a concurrent `focus todo`, and
     // AppState's directory watcher picks it up.
 
-    static func promptAddTodo() {
-        let alert = NSAlert()
-        alert.messageText = "Add a task for today"
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.placeholderString = "task"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Add")
-        alert.addButton(withTitle: "Cancel")
-
-        NSApp.activate(ignoringOtherApps: true)
-        alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let title = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
-        do {
-            try TodoList.default.add(title)
-        } catch {
-            // The menu greys out "Add task…" when the list is full, but a
-            // terminal can fill it while this prompt is open.
-            NSAlert(error: error).runModal()
-        }
-    }
-
     static func setTodoDone(_ id: UUID, _ done: Bool) {
         todo("setDone") { try TodoList.default.setDone(.id(id), done) }
     }

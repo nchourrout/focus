@@ -163,8 +163,11 @@ struct SessionHistory {
                             calendar: Calendar = .current) -> [DayTotal] {
         let start = windowStart(days: days, now: now, calendar: calendar)
         var result: [DayTotal] = (0..<max(days, 1)).compactMap { offset in
+            // startOfDay again: where DST starts at midnight, that day begins
+            // at 01:00, and every day added to it would land an hour past the
+            // key an entry's own startOfDay looks up.
             calendar.date(byAdding: .day, value: offset, to: start)
-                .map { DayTotal(day: $0, totals: Totals(sessions: 0, minutes: 0)) }
+                .map { DayTotal(day: calendar.startOfDay(for: $0), totals: Totals(sessions: 0, minutes: 0)) }
         }
         let slot = Dictionary(uniqueKeysWithValues: result.enumerated().map { ($1.day, $0) })
         for entry in entries where entry.endedAt >= start.timeIntervalSince1970 {

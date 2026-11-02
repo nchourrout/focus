@@ -61,9 +61,16 @@ struct TodoList {
 
     // MARK: Interface
 
-    /// Today's list, in the order the tasks were added.
+    /// Today's list, in the order the tasks were added. An unreadable file
+    /// reads as empty, which is right for display; see `load` otherwise.
     func items(now: Date = Date()) -> [Item] {
-        Self.rolledOver((try? read()) ?? [], now: now)
+        (try? load(now: now)) ?? []
+    }
+
+    /// Today's list, throwing `.unreadable` rather than passing a damaged
+    /// file off as an empty list.
+    func load(now: Date = Date()) throws -> [Item] {
+        Self.rolledOver(try read(), now: now)
     }
 
     @discardableResult

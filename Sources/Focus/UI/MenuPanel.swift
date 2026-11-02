@@ -57,7 +57,7 @@ private struct OpaquePanel: NSViewRepresentable {
 
 private extension NSView {
     func subviewsDeep<T: NSView>(of type: T.Type) -> [T] {
-        subviews.flatMap { ($0 as? T).map { [$0] } ?? [] + $0.subviewsDeep(of: type) }
+        subviews.flatMap { (($0 as? T).map { [$0] } ?? []) + $0.subviewsDeep(of: type) }
     }
 }
 
