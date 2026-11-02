@@ -29,7 +29,7 @@ struct FileLock {
         guard fd >= 0 else { return try body() }
         defer { close(fd) }
         guard acquire(fd) else {
-            Log.daemon.error("hosts lock \(path, privacy: .public) still held after \(timeout, privacy: .public)s; proceeding unlocked")
+            Log.daemon.error("lock \(path, privacy: .public) still held after \(timeout, privacy: .public)s; proceeding unlocked")
             return try body()
         }
         defer { flock(fd, LOCK_UN) }

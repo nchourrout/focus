@@ -165,7 +165,7 @@ enum LocalPlayback {
         var startedAt: TimeInterval?
     }
 
-    /// The menu bar asks for this once a second, so it costs one file read and
+    /// The menu bar asks for this on every refresh, so it costs one file read and
     /// one liveness probe rather than repeating both per property.
     static var playing: Playing {
         guard let lines = trackedLines(), let pid = lines.first.flatMap(Int32.init),

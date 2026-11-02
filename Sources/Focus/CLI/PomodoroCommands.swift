@@ -19,7 +19,10 @@ extension Pomodoro {
         // Every override is optional: omitted means "use the Settings value", so
         // the CLI and the menu bar start identical sessions. See `PomodoroPlan`.
         @Argument(help: "What you're working on")
-        var goal: String
+        var goal: String?
+
+        @Option(help: ArgumentHelp("Use today's task N as the goal (see `focus todo`)", valueName: "N"))
+        var todo: Int?
 
         @Option(help: ArgumentHelp("Work minutes (default: your Settings value)", valueName: "MINS"))
         var work: Int?
@@ -37,6 +40,11 @@ extension Pomodoro {
         var block: Bool?
 
         func validate() throws {
+            switch (goal, todo) {
+            case (nil, nil): throw ValidationError("give a goal, or --todo N")
+            case (.some, .some): throw ValidationError("give a goal or --todo N, not both")
+            default: break
+            }
             if let work, work <= 0 {
                 throw ValidationError("--work must be a positive integer")
             }
@@ -48,7 +56,7 @@ extension Pomodoro {
         func run() throws {
             try PomodoroDaemon.launch(
                 PomodoroPlan.fromSettings(
-                    goal: goal,
+                    goal: try resolvedGoal(),
                     workMinutes: work,
                     breakMinutes: breakMinutes,
                     block: block,
@@ -122,7 +130,7 @@ extension Pomodoro {
             }
             // A record whose daemon died (crash, kill -9, reboot) is a
             // leftover, not a session: report it as such instead of a live
-            // countdown. The menu bar clears it on its next tick.
+            // countdown. The menu bar clears it within two heartbeats.
             if SessionStaleness.isStale(state) {
                 if json {
                     print("{\"running\": false, \"stale\": true}")
@@ -199,5 +207,23 @@ struct PomodoroRun: ParsableCommand {
             station: music.flatMap { Station(uri: $0) }
         )
         PomodoroDaemon.runDaemon(plan, workEnd: workEnd, breakEnd: breakEnd)
+    }
+}
+
+/// The goal to run under: the argument, or the title of the task `--todo`
+/// names. `validate` guarantees exactly one of them is set.
+extension Pomodoro.Start {
+    func resolvedGoal(list: TodoList = .default) throws -> String {
+        if let goal { return goal }
+        let items = list.items()
+        guard let todo, todo >= 1, todo <= items.count else {
+            throw ValidationError("no task \(todo ?? 0); `focus todo` lists them")
+        }
+        let item = items[todo - 1]
+        // Same rule as the menu, which only offers open tasks.
+        guard !item.isDone else {
+            throw ValidationError("task \(todo) is already done; `focus todo undo \(todo)` reopens it")
+        }
+        return item.title
     }
 }

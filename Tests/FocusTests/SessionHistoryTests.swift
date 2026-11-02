@@ -108,3 +108,37 @@ import Foundation
         #expect(SessionHistory.Totals(sessions: 3, minutes: 120).describe() == "2h")
     }
 }
+
+@Suite struct DailyTotalsTests {
+    private let calendar = Calendar.current
+    private var now: Date { calendar.date(bySettingHour: 15, minute: 0, second: 0, of: Date())! }
+
+    private func entry(daysAgo: Int, hour: Int = 10, minutes: Double = 25, completed: Bool = true) -> SessionHistory.Entry {
+        let day = calendar.date(byAdding: .day, value: -daysAgo, to: now)!
+        let start = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day)!.timeIntervalSince1970
+        return SessionHistory.Entry(goal: "g", startedAt: start, endedAt: start + minutes * 60,
+                                    longBreak: false, completed: completed)
+    }
+
+    @Test func oneSlotPerDayTodayLastEmptyDaysIncluded() {
+        let daily = SessionHistory.dailyTotals(days: 7, in: [], now: now)
+        #expect(daily.count == 7)
+        #expect(daily.last?.day == calendar.startOfDay(for: now))
+        #expect(daily.first?.day == SessionHistory.windowStart(days: 7, now: now))
+        #expect(daily.allSatisfy { $0.totals.minutes == 0 })
+    }
+
+    @Test func entriesLandOnTheDayTheyEnded() {
+        let entries = [entry(daysAgo: 0), entry(daysAgo: 0, hour: 11),
+                       entry(daysAgo: 2, completed: false), entry(daysAgo: 9)]
+        let daily = SessionHistory.dailyTotals(days: 7, in: entries, now: now)
+        #expect(daily[6].totals == .init(sessions: 2, minutes: 50))
+        #expect(daily[4].totals == .init(sessions: 0, minutes: 25), "a partial counts minutes, not a session")
+        #expect(daily.reduce(0) { $0 + $1.totals.minutes } == 75, "outside the window is dropped")
+    }
+
+    @Test func summaryIsSingularForOneSession() {
+        #expect(SessionHistory.Totals(sessions: 1, minutes: 25).summary() == "25m across 1 session")
+        #expect(SessionHistory.Totals(sessions: 2, minutes: 75).summary() == "1h 15m across 2 sessions")
+    }
+}

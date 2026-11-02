@@ -135,6 +135,45 @@ struct SessionHistory {
             case let (h, m): return "\(h)h \(m)m"
             }
         }
+
+        /// "1h 15m across 3 sessions", singular when it is one.
+        func summary() -> String {
+            "\(describe()) across \(sessions) session\(sessions == 1 ? "" : "s")"
+        }
+    }
+
+    /// One calendar day's totals, for the per-day bars.
+    struct DayTotal: Equatable {
+        let day: Date
+        var totals: Totals
+    }
+
+    /// Start of the window covering today and the `days - 1` days before it.
+    /// Calendar days rather than `days * 24h`, so a window and its bars agree
+    /// on where it begins.
+    static func windowStart(days: Int, now: Date = Date(), calendar: Calendar = .current) -> Date {
+        let today = calendar.startOfDay(for: now)
+        return calendar.date(byAdding: .day, value: -(max(days, 1) - 1), to: today) ?? today
+    }
+
+    /// Totals per calendar day, oldest first, today last, days with nothing
+    /// included as zero so a chart shows the gap. An entry belongs to the day
+    /// it ended on, the same rule `totals(since:)` cuts on.
+    static func dailyTotals(days: Int, in entries: [Entry], now: Date = Date(),
+                            calendar: Calendar = .current) -> [DayTotal] {
+        let start = windowStart(days: days, now: now, calendar: calendar)
+        var result: [DayTotal] = (0..<max(days, 1)).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: start)
+                .map { DayTotal(day: $0, totals: Totals(sessions: 0, minutes: 0)) }
+        }
+        let slot = Dictionary(uniqueKeysWithValues: result.enumerated().map { ($1.day, $0) })
+        for entry in entries where entry.endedAt >= start.timeIntervalSince1970 {
+            let day = calendar.startOfDay(for: Date(timeIntervalSince1970: entry.endedAt))
+            guard let i = slot[day] else { continue }
+            result[i].totals.minutes += entry.minutes
+            if entry.completed { result[i].totals.sessions += 1 }
+        }
+        return result
     }
 
     /// Totals for the user's calendar day. Defined here rather than at each

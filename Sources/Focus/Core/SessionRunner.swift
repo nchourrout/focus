@@ -23,7 +23,7 @@ protocol SessionEffects {
 /// break, and either stop or roll into the next session.
 ///
 /// This is the behaviour a user actually notices — when the block lifts, when
-/// the long break lands, whether a set stops and asks. It lives behind one small
+/// the long break lands, when the run ends. It lives behind one small
 /// interface so all of it is reachable from a test.
 struct SessionRunner {
     let plan: PomodoroPlan
@@ -65,9 +65,8 @@ struct SessionRunner {
 
     /// Append a `completed: false` history line when a run is torn down in the
     /// middle of a work phase (`pomodoro stop`, SIGTERM). Call before
-    /// `endSession` — the state file is the source being read. Breaks and
-    /// set-complete markers never get partials: their work phase already
-    /// earned its line at the boundary. Paused sessions skip too — `pause`
+    /// `endSession` — the state file is the source being read. Breaks never
+    /// get partials: their work phase already earned its line at the boundary. Paused sessions skip too — `pause`
     /// calls this itself before stamping the record, so by the time it reads
     /// paused the line exists and a second one would double-count. The dedupe
     /// check covers the race where the runner recorded the completion just
@@ -136,22 +135,6 @@ struct SessionRunner {
                     history.append(SessionHistory.Entry(
                         workPhaseOf: cur, endedAt: effects.now, completed: true
                     ))
-                }
-
-                // Stop-after-set: when cycling is on and the user opted to stop at
-                // each set boundary (every Nth session — the same cadence that earns
-                // the long break), end here without taking the final break. Clean up
-                // as a normal stop, then leave a terminal marker so the menu bar app
-                // posts the "start another set" notification.
-                let atWorkEnd = effects.cadence
-                if atWorkEnd.keepCycling, atWorkEnd.stopAfterSet,
-                   let prev = finished,
-                   session.hasLongBreak(sessionNumber: prev.sessionNumber,
-                                        every: atWorkEnd.sessionsBeforeLongBreak) {
-                    Self.endSession(unblock: plan.block, clearing: session, effects: effects)
-                    Self.save(session.completedSet(from: prev, at: effects.now),
-                              to: session, what: "set-complete marker")
-                    return
                 }
 
                 // Entering the break: lift the block so the user can browse freely

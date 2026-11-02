@@ -41,12 +41,6 @@ struct PomodoroSession {
         /// actually planned — not whatever the cadence setting reads right now (the
         /// user may change it mid-run). Files predating this field decode as false.
         var isLongBreak: Bool
-        /// Terminal marker: the daemon set this set's last work phase as the end
-        /// of a "stop after each set" run and exited (skipping the final break).
-        /// The menu bar app reads it to post the "start another set" notification,
-        /// then clears the file. Always false on a live session. Files predating
-        /// this field decode as false.
-        var setComplete: Bool
         /// Work/break minutes of the plan this run launched with, so commands
         /// acting mid-run (`pomodoro skip-break`) rebuild deadlines faithfully
         /// even when Settings changed since launch — durations are fixed for
@@ -99,7 +93,6 @@ struct PomodoroSession {
             case breakEnd = "break_end"
             case sessionNumber = "session_number"
             case isLongBreak = "is_long_break"
-            case setComplete = "set_complete"
             case workMinutes = "work_minutes"
             case breakMinutes = "break_minutes"
             case pausedAt = "paused_at"
@@ -109,7 +102,6 @@ struct PomodoroSession {
              workEnd: TimeInterval, breakEnd: TimeInterval,
              music: String?, block: Bool, daemonStartedAt: TimeInterval? = nil,
              sessionNumber: Int = 1, isLongBreak: Bool = false,
-             setComplete: Bool = false,
              workMinutes: Int? = nil, breakMinutes: Int? = nil,
              pausedAt: TimeInterval? = nil) {
             self.goal = goal
@@ -122,7 +114,6 @@ struct PomodoroSession {
             self.block = block
             self.sessionNumber = sessionNumber
             self.isLongBreak = isLongBreak
-            self.setComplete = setComplete
             self.workMinutes = workMinutes
             self.breakMinutes = breakMinutes
             self.pausedAt = pausedAt
@@ -141,7 +132,6 @@ struct PomodoroSession {
             block = try c.decodeIfPresent(Bool.self, forKey: .block) ?? true
             sessionNumber = try c.decodeIfPresent(Int.self, forKey: .sessionNumber) ?? 1
             isLongBreak = try c.decodeIfPresent(Bool.self, forKey: .isLongBreak) ?? false
-            setComplete = try c.decodeIfPresent(Bool.self, forKey: .setComplete) ?? false
             workMinutes = try c.decodeIfPresent(Int.self, forKey: .workMinutes)
             breakMinutes = try c.decodeIfPresent(Int.self, forKey: .breakMinutes)
             pausedAt = try c.decodeIfPresent(TimeInterval.self, forKey: .pausedAt)
@@ -158,7 +148,6 @@ struct PomodoroSession {
             try c.encode(block, forKey: .block)
             try c.encode(sessionNumber, forKey: .sessionNumber)
             try c.encode(isLongBreak, forKey: .isLongBreak)
-            try c.encode(setComplete, forKey: .setComplete)
             try c.encodeIfPresent(workMinutes, forKey: .workMinutes)
             try c.encodeIfPresent(breakMinutes, forKey: .breakMinutes)
             try c.encodeIfPresent(pausedAt, forKey: .pausedAt)
@@ -262,25 +251,6 @@ struct PomodoroSession {
         )
     }
 
-    /// Terminal marker written when a "stop after each set" run ends: the same
-    /// session, with both deadlines pulled back to `at` (so `phase(of:)` reads
-    /// `.done`) and `setComplete` flipped on. The menu bar app posts the
-    /// "start another set" notification off this and then clears the file.
-    func completedSet(from prev: Active,
-                      at end: TimeInterval = Date().timeIntervalSince1970) -> Active {
-        Active(
-            goal: prev.goal, pid: prev.pid, startedAt: prev.startedAt,
-            workEnd: end, breakEnd: end,
-            music: prev.music, block: prev.block,
-            daemonStartedAt: prev.daemonStartedAt,
-            // No break follows a set-complete marker, so isLongBreak is moot — keep
-            // it false rather than carrying a flag for a break that never happens.
-            sessionNumber: prev.sessionNumber, isLongBreak: false,
-            setComplete: true,
-            workMinutes: prev.workMinutes, breakMinutes: prev.breakMinutes
-        )
-    }
-
     // MARK: Pause / resume
 
     /// Stamp `active` as paused at `now`. The deadlines stay untouched — the
@@ -315,7 +285,6 @@ struct PomodoroSession {
             daemonStartedAt: nil,
             sessionNumber: active.sessionNumber,
             isLongBreak: active.isLongBreak,
-            setComplete: active.setComplete,
             workMinutes: active.workMinutes,
             breakMinutes: active.breakMinutes
         )

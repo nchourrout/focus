@@ -106,4 +106,15 @@ import Foundation
         #expect(!feedDead(&detector, makeActive(pid: 4242)))
         #expect(feedDead(&detector, makeActive(pid: 4242)))
     }
+
+    @Test func sightingsInsideTheGapDoNotConfirm() {
+        var detector = StaleSessionDetector(minimumGap: 2)
+        func feed(at now: TimeInterval) -> Bool {
+            detector.confirmStale(makeActive(), now: now, liveness: { _, _ in false })
+        }
+        #expect(!feed(at: 100))
+        #expect(!feed(at: 100.3), "a file event right after the first read must not confirm")
+        #expect(!feed(at: 101.9))
+        #expect(feed(at: 102), "measured from the first sighting, not the latest")
+    }
 }

@@ -21,7 +21,7 @@ import Foundation
             plan: PomodoroPlan(goal: "ship it", workMinutes: 25, breakMinutes: 5,
                                block: true, station: nil),
             cadence: PomodoroCadence(longBreakMinutes: 15, sessionsBeforeLongBreak: 4,
-                                     keepCycling: true, stopAfterSet: false),
+                                     keepCycling: true),
             pid: 0, at: start
         )
         // What `PomodoroDaemon.spawn` stamps once the fork returns.
@@ -64,11 +64,6 @@ import Foundation
 
     // MARK: The rest of the lifecycle
 
-    @Test func aSetCompleteMarkerKeepsTheStamp() {
-        let done = session.completedSet(from: launched(), at: 1000 + 25 * 60)
-        #expect(done.daemonStartedAt == 1000)
-    }
-
     @Test func pausingKeepsTheStampAndResumingDropsIt() throws {
         let frozen = session.paused(launched(), at: 1500)
         #expect(frozen.daemonStartedAt == 1000, "the record is only frozen, not re-forked")
@@ -110,7 +105,7 @@ import Foundation
         let beforeFork = session.firstSession(
             plan: PomodoroPlan(goal: "x", workMinutes: 25, breakMinutes: 5, block: true, station: nil),
             cadence: PomodoroCadence(longBreakMinutes: 15, sessionsBeforeLongBreak: 4,
-                                     keepCycling: true, stopAfterSet: false),
+                                     keepCycling: true),
             pid: 0, at: 1000
         )
         let obj = try #require(

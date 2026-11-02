@@ -62,16 +62,12 @@ struct PomodoroCadence: Equatable {
     var sessionsBeforeLongBreak: Int
     /// Keep cycling work → break → work until stopped.
     var keepCycling: Bool
-    /// Stop at the end of each set instead of taking the long break, and ask
-    /// whether to start another.
-    var stopAfterSet: Bool
 
     static var fromSettings: PomodoroCadence {
         PomodoroCadence(
             longBreakMinutes: Defaults.longBreakMinutes,
             sessionsBeforeLongBreak: Defaults.sessionsBeforeLongBreak,
-            keepCycling: Defaults.autoStartNextSession,
-            stopAfterSet: Defaults.stopAfterSet
+            keepCycling: Defaults.autoStartNextSession
         )
     }
 }

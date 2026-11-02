@@ -7,28 +7,27 @@ struct SettingsContent: View {
             GeneralTab()
                 .tabItem { Label("General", systemImage: "gear") }
 
+            BlockingTab()
+                .tabItem { Label("Blocking", systemImage: "nosign") }
+
             ShortcutsTab()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
 
-            BlockListTab()
-                .tabItem { Label("Block list", systemImage: "nosign") }
+            StatsTab()
+                .tabItem { Label("Stats", systemImage: "chart.bar") }
         }
-        // Sized to fit the General tab's content, which is the tallest. Grouped
-        // Form rows are roomier than the hand-spaced VStack this replaced, so the
-        // window is taller than it looks like it needs to be: at 620 the System
-        // section fell below the fold, which hides the "Grant permission" button
-        // — the one control a user goes looking for when blocking isn't working.
-        // The Form still scrolls on its own at large accessibility text sizes,
-        // and on the Block list tab.
-        .frame(width: 500, height: 864)
+        // Sized to fit the General tab, the tallest. It used to also carry the
+        // block permission and DNS settings and needed 864pt; those now live on
+        // the Blocking tab, next to the list they apply to. Each Form still
+        // scrolls on its own at large accessibility text sizes.
+        .frame(width: 500, height: 640)
     }
 }
 
 private struct GeneralTab: View {
-    /// Bumped after SMAppService or sudoers-drop-in state changes, so the
-    /// read-only computed properties re-evaluate.
+    /// Bumped after a setting or SMAppService state changes, so the read-only
+    /// computed properties re-evaluate.
     @ViewState private var refreshTick = 0
-    @ViewState private var installError: String?
 
     var body: some View {
         Form {
@@ -54,9 +53,6 @@ private struct GeneralTab: View {
                 )
                 .disabled(!autoStart)
                 Stepper("Long break: \(longBreakMinutes) min", value: longBreakBinding, in: 1...60)
-                    // Replaced by the stop-and-ask prompt at the set boundary.
-                    .disabled(!autoStart || stopAfterSet)
-                Toggle("Stop after each set and ask to continue", isOn: stopAfterSetBinding)
                     .disabled(!autoStart)
             } header: {
                 Text("Cycling")
@@ -67,47 +63,8 @@ private struct GeneralTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section {
-                Toggle("Block DNS-over-HTTPS endpoints", isOn: blockDoHBinding)
-            } header: {
-                Text("Websites")
-            } footer: {
-                Text("Forces browsers with Secure DNS enabled to fall back to the system resolver, so site blocks aren't bypassed. Disable if you rely on Cloudflare WARP or iCloud Private Relay.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
+            Section("System") {
                 Toggle("Launch at login", isOn: launchAtLoginBinding)
-
-                LabeledContent {
-                    Button(permissionButtonTitle) {
-                        installPermission()
-                    }
-                } label: {
-                    Label {
-                        Text(permissionLabel)
-                    } icon: {
-                        Image(systemName: permissionStatus == .current
-                              ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(permissionStatus == .current ? .green : .orange)
-                    }
-                }
-
-                if let installError {
-                    Text(installError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } header: {
-                Text("System")
-            } footer: {
-                Text("Editing /etc/hosts needs a one-time admin password. Focus installs an /etc/sudoers.d entry so it never has to ask again.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
@@ -123,48 +80,13 @@ private struct GeneralTab: View {
         }
         let every = sessionsBeforeLongBreak
         let sessions = "\(every) session\(every == 1 ? "" : "s")"
-        if stopAfterSet {
-            return "Runs \(sessions), skips the last break, then asks whether to start another set."
-        }
         return "Runs continuously, taking a \(longBreakMinutes) min break after every \(sessions) instead of \(breakMinutes) min."
-    }
-
-    private var permissionStatus: SudoersInstaller.Status {
-        _ = refreshTick
-        return SudoersInstaller.status
-    }
-
-    private var permissionLabel: String {
-        switch permissionStatus {
-        case .missing: return "Not granted"
-        // Still works, but runs an older build of the helper, or trusts the
-        // user-writable binary (drop-ins from before the helper existed).
-        case .outdated: return "Granted, needs update"
-        case .current: return "Granted"
-        }
-    }
-
-    private var permissionButtonTitle: String {
-        switch permissionStatus {
-        case .missing: return "Grant…"
-        case .outdated: return "Update…"
-        case .current: return "Reinstall…"
-        }
-    }
-
-    private func installPermission() {
-        installError = nil
-        SudoersInstaller.installWithUI(
-            onSuccess: { refreshTick += 1 },
-            onError: { error in installError = error.localizedDescription }
-        )
     }
 
     private var workMinutes: Int { _ = refreshTick; return Defaults.workMinutes }
     private var breakMinutes: Int { _ = refreshTick; return Defaults.breakMinutes }
     private var longBreakMinutes: Int { _ = refreshTick; return Defaults.longBreakMinutes }
     private var sessionsBeforeLongBreak: Int { _ = refreshTick; return Defaults.sessionsBeforeLongBreak }
-    private var stopAfterSet: Bool { _ = refreshTick; return Defaults.stopAfterSet }
     private var autoStart: Bool { _ = refreshTick; return Defaults.autoStartNextSession }
 
     /// Wrap a Defaults accessor in a Binding that bumps `refreshTick` on every
@@ -192,9 +114,6 @@ private struct GeneralTab: View {
     }
     private var autoStartBinding: Binding<Bool> {
         defaultsBinding(get: { Defaults.autoStartNextSession }, set: { Defaults.autoStartNextSession = $0 })
-    }
-    private var stopAfterSetBinding: Binding<Bool> {
-        defaultsBinding(get: { Defaults.stopAfterSet }, set: { Defaults.stopAfterSet = $0 })
     }
     private var longBreakBinding: Binding<Int> {
         defaultsBinding(get: { Defaults.longBreakMinutes }, set: { Defaults.longBreakMinutes = $0 })
@@ -233,18 +152,6 @@ private struct GeneralTab: View {
         )
     }
 
-    private var blockDoHBinding: Binding<Bool> {
-        Binding(
-            get: { _ = refreshTick; return Defaults.blockDoHEndpoints },
-            set: { newValue in
-                guard newValue != Defaults.blockDoHEndpoints else { return }
-                Defaults.blockDoHEndpoints = newValue
-                refreshTick += 1
-                Actions.reapplyBlock()
-            }
-        )
-    }
-
     /// Reads `SMAppService.mainApp.status` on every access so the toggle always
     /// reflects the live state, not a snapshot from view init.
     private var launchAtLoginBinding: Binding<Bool> {
@@ -275,44 +182,74 @@ private struct ShortcutsTab: View {
     }
 }
 
-private struct BlockListTab: View {
+/// Everything that decides what a block does: whether Focus may apply it,
+/// whether DNS-over-HTTPS gets around it, and the sites it covers.
+private struct BlockingTab: View {
     @ViewState private var content: String = ""
     @ViewState private var error: String?
     @ViewState private var loaded = false
     @ViewState private var saveTask: Task<Void, Never>?
+    /// Bumped after the sudoers drop-in or a setting changes, so the read-only
+    /// computed properties re-evaluate.
+    @ViewState private var refreshTick = 0
+    @ViewState private var installError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("One site per line. Lines starting with # are comments. www. is added automatically.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            TextEditor(text: $content)
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.hidden)
-                .background(Color(NSColor.textBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.secondary.opacity(0.3))
-                )
-                .frame(minHeight: 200)
-
-            HStack {
-                if let error {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    Text(error).font(.caption).foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text("Saved. Applies the next time the block turns on, including at the start of each work phase.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        Form {
+            Section {
+                LabeledContent {
+                    Button(permissionButtonTitle) {
+                        installPermission()
+                    }
+                } label: {
+                    Label {
+                        Text(permissionLabel)
+                    } icon: {
+                        Image(systemName: permissionStatus == .current
+                              ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(permissionStatus == .current ? .green : .orange)
+                    }
                 }
+
+                if let installError {
+                    Text(installError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Toggle("Block DNS-over-HTTPS endpoints", isOn: blockDoHBinding)
+            } footer: {
+                Text("Editing /etc/hosts needs a one-time admin password. Blocking DNS-over-HTTPS makes browsers with Secure DNS fall back to the system resolver, so blocks aren't bypassed. Turn it off if you rely on Cloudflare WARP or iCloud Private Relay.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                TextEditor(text: $content)
+                    .font(.system(.body, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 220)
+            } header: {
+                Text("Sites")
+            } footer: {
+                HStack(alignment: .firstTextBaseline) {
+                    if let error {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(error).foregroundStyle(.red)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        // Verbatim: as markdown, "www." renders as a link.
+                        Text(verbatim: "One site per line, # for comments. www., m. and mobile. are added automatically. Saved; applies the next time the block turns on, including at each work phase.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .formStyle(.grouped)
         .onAppear {
             guard !loaded else { return }
             loaded = true
@@ -338,6 +275,49 @@ private struct BlockListTab: View {
             saveTask?.cancel()
             save()
         }
+    }
+
+    private var permissionStatus: SudoersInstaller.Status {
+        _ = refreshTick
+        return SudoersInstaller.status
+    }
+
+    private var permissionLabel: String {
+        switch permissionStatus {
+        case .missing: return "Not granted"
+        // Still works, but runs an older build of the helper, or trusts the
+        // user-writable binary (drop-ins from before the helper existed).
+        case .outdated: return "Granted, needs update"
+        case .current: return "Granted"
+        }
+    }
+
+    private var permissionButtonTitle: String {
+        switch permissionStatus {
+        case .missing: return "Grant…"
+        case .outdated: return "Update…"
+        case .current: return "Reinstall…"
+        }
+    }
+
+    private func installPermission() {
+        installError = nil
+        SudoersInstaller.installWithUI(
+            onSuccess: { refreshTick += 1 },
+            onError: { error in installError = error.localizedDescription }
+        )
+    }
+
+    private var blockDoHBinding: Binding<Bool> {
+        Binding(
+            get: { _ = refreshTick; return Defaults.blockDoHEndpoints },
+            set: { newValue in
+                guard newValue != Defaults.blockDoHEndpoints else { return }
+                Defaults.blockDoHEndpoints = newValue
+                refreshTick += 1
+                Actions.reapplyBlock()
+            }
+        )
     }
 
     private func load() {
