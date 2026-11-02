@@ -86,6 +86,17 @@ import Testing
         #expect(output.contains("::1 cloudflare-dns.com\n"))
         #expect(!output.contains("www.dns.google"), "extras must not get a www. variant")
         #expect(!output.contains("www.cloudflare-dns.com"))
+        #expect(!output.contains("m.dns.google"), "nor any other site prefix")
+    }
+
+    /// hosts has no wildcards, so a listed site must also cover the mobile
+    /// hosts that serve the same pages, in both address families.
+    @Test func renderCoversWWWAndMobileHosts() {
+        let output = SiteBlock.renderBlock(sites: ["youtube.com"], extraExactDomains: [])
+        for host in ["youtube.com", "www.youtube.com", "m.youtube.com", "mobile.youtube.com"] {
+            #expect(output.contains("127.0.0.1 \(host)\n"))
+            #expect(output.contains("::1 \(host)\n"))
+        }
     }
 
     @Test func stripRefusesToDropContentOnUnmatchedStart() {

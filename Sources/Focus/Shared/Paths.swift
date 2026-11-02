@@ -72,6 +72,10 @@ enum Paths {
     /// Append-only log of finished work sessions.
     static var history: URL { appSupport.appendingPathComponent("history.jsonl") }
 
+    /// Today's tasks. See `TodoList`.
+    static var todos: URL { appSupport.appendingPathComponent("todos.json") }
+    static var todosLock: URL { appSupport.appendingPathComponent(".todos.lock") }
+
     /// Absolute path to the running executable, used to re-invoke ourselves.
     ///
     /// Symlinks are resolved because the sudoers drop-in whitelists the binary

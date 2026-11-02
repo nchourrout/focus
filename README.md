@@ -10,7 +10,9 @@ A macOS menu bar app + CLI to get in the zone.
 
 - **Block distracting websites** by editing `/etc/hosts`
 - **Play focus music** from seven free, ad-free [SomaFM](https://somafm.com) stations (no account), any HTTP(S) stream URL, or a local file. Streams fade in and out rather than cutting, and duck under the phase cues
-- **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up after itself. The block lifts during breaks and returns for the next work phase. It keeps cycling until you stop it, with a longer break every 4 sessions — or stops after each set and asks whether to start another
+- **Run a pomodoro** as a detached daemon that blocks sites, plays music, and cleans up after itself. The block lifts during breaks and returns for the next work phase. It keeps cycling until you stop it, with a longer break every 4 sessions, or runs a single session
+- **Keep a few tasks for today**, from the menu or the CLI, and start a pomodoro on one
+- **See how much you focused**, per day, in Settings or with `focus stats`
 - **Global hotkeys** and a **launch at login** toggle, both configured in Settings
 - One Swift binary is both the menu bar app (no args) and the CLI (a subcommand)
 
@@ -27,11 +29,7 @@ The app is unsigned, so Gatekeeper blocks the first launch until that `xattr` ru
 
 ## Build & install
 
-Requires macOS 13+ and Swift 5.10+. Command Line Tools are enough to build. Views use `@ViewState` rather than `@State`: on the macOS 27 SDK `@State` is a macro whose plugin ships only with Xcode. Testing with Command Line Tools on macOS 27 needs the Swift Testing macro plugin path passed explicitly:
-
-```bash
-swift test -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
-```
+Requires macOS 13+ and Swift 5.10+. Command Line Tools are enough to build. Views use `@ViewState` rather than `@State`: on the macOS 27 SDK `@State` is a macro whose plugin ships only with Xcode. Running the tests without Xcode takes a few extra flags, see [Testing](#testing).
 
 ```bash
 git clone git@github.com:nchourrout/focus.git ~/dev/focus
@@ -49,13 +47,13 @@ The first time you toggle the block, Focus pops a native admin password dialog, 
 
 - **stopwatch** during work, **coffee cup** during the break, with a live `mm:ss` countdown. Idle shows a dashed circle, or a slashed one when the block is on
 - The goal can sit next to the countdown (**Settings → General → Show the goal in the menu bar**, off by default, capped at 20 characters so the bar stays narrow)
-- **Start pomodoro…** — prompts for a goal; becomes **Stop pomodoro** while running
-- **Block / Unblock websites**
-- **Music** — any preset, or Stop. The current station is named in the title and check-marked in the list
-- **Settings…** (⌘,) — General, Shortcuts, and an inline editor for the Block list
-- **Quit Focus**
+- Clicking the icon opens a panel with three parts:
+  - **Session**: phase, live countdown, goal and progress, with Pause, Stop and Skip break. Idle, it offers **Start on "<first open task>"**, or **Other goal…** to type one
+  - **Today**: up to 3 open tasks. Tick the circle to mark one done; hover for **Start** and **Remove**; type in the last row and press Return to add one. The running task is tagged NOW. Finished tasks drop off at midnight, open ones carry over
+  - **Footer**: Block toggle, Music picker, time focused today, and the gear for **Settings…** (⌘,) and **Quit** (⌘Q)
+- Settings has General, Blocking (permission, DNS-over-HTTPS, the site list), Shortcuts, and Stats (focused time per day over 7 or 30 days)
 
-Menu actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.json` stays the single source of truth; the menu bar polls it once a second. Starting a pomodoro passes no flags — the CLI reads the same Settings the menu would, so the rules live in one place.
+Session actions shell out to the same binary in CLI mode, so `~/.focus-pomodoro.json` stays the single source of truth; the menu bar watches it and refreshes as soon as it changes, with a 5s heartbeat to catch a daemon that died without cleaning up. Starting a pomodoro passes no flags — the CLI reads the same Settings the menu would, so the rules live in one place.
 
 ## CLI
 
@@ -79,10 +77,16 @@ focus pomodoro pause                              # freeze the session; block li
 focus pomodoro resume                             # continue where it left off
 focus pomodoro stop
 
-focus stats                                       # today + last 7 days; --days N widens the window
+focus stats                                       # today, last 7 days, one bar per day; --days N, --json
+
+focus todo                                        # today's tasks; --json
+focus todo add write the spec                     # at most 3 open
+focus todo done 1                                 # undo 1 reopens it
+focus todo rm 1
+focus pomodoro start --todo 1                     # task 1 as the goal
 ```
 
-Every pomodoro flag is an override: omit one and the session uses your Settings value (25/5 out of the box), so the CLI and the menu bar start identical sessions. Cycling, long-break length and cadence, and stop-after-set live in **Settings → General**, and are re-read at each phase boundary — change one mid-run and it takes effect at the next transition, not the next run.
+Every pomodoro flag is an override: omit one and the session uses your Settings value (25/5 out of the box), so the CLI and the menu bar start identical sessions. Cycling and the long-break length and cadence live in **Settings → General**, and are re-read at each phase boundary — change one mid-run and it takes effect at the next transition, not the next run.
 
 The station list runs least eventful first. What makes a stream good for focus is mostly what it doesn't do, so `dronezone`, `darkzone`, `deepspaceone` and `synphaera` lead: ambient, no vocals, nothing that resolves. `groovesalad`, `cliqhop` and `missioncontrol` have beats, and `missioncontrol` mixes in NASA mission audio, which is intermittent speech and the worst thing to have running behind any work involving language. They are kept because some people want them, not because they are the best default.
 
@@ -110,17 +114,18 @@ All ramp timings and levels live in [`AudioFade`](Sources/Focus/Core/AudioFade.s
 
 ## Sudoers (system permission)
 
-`block`, `unblock`, and `toggle` write `/etc/hosts`, and the daemon runs them via `sudo -n`, so a `NOPASSWD` entry in `/etc/sudoers.d/focus` is required. Focus installs it itself: the first Block toggle prompts with the native admin dialog and writes the rule after `visudo -cf` validation. Re-run it any time from **Settings → General → Grant permission…**, for instance if the binary path changes.
+`block`, `unblock`, and `toggle` write `/etc/hosts`, and the daemon runs them via `sudo -n`, so a `NOPASSWD` entry in `/etc/sudoers.d/focus` is required. Focus installs it itself: the first Block toggle prompts with the native admin dialog and writes the rule after `visudo -cf` validation. Re-run it any time from **Settings → Blocking → Grant…**, for instance after upgrading from a zip, when Settings shows "needs update".
 
-The rule whitelists `block`, `unblock`, and `toggle` against the Focus.app binary path with their documented flag combinations, no wildcards. See [`SudoersInstaller.renderRule`](Sources/Focus/Core/SudoersInstaller.swift).
+The rule never names the binary in `/Applications`, which any process running as you could overwrite. The installer copies the binary to the root-owned `/Library/PrivilegedHelperTools/com.nchourrout.focus/focus`, checks its hash as root, and whitelists `block`, `unblock`, and `toggle` against that copy only, with their documented flag combinations and no wildcards. See [`SudoersInstaller.renderRule`](Sources/Focus/Core/SudoersInstaller.swift).
 
 ## State files
 
 - `/etc/hosts` — block entries between `# === FOCUS BLOCK START/END ===` markers
 - `/etc/hosts.backup` — first-block backup
-- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, daemon_started_at, work_end, break_end, music, block, session_number, is_long_break, set_complete, work_minutes, break_minutes, paused_at). `started_at` is when the current work phase began and moves at every cycle boundary; `daemon_started_at` is the daemon process's own start time and does not, which is what identifies the pid as still ours. A record with `paused_at` set sits frozen until resumed; starting a new session first requires resuming or stopping it.
+- `~/.focus-pomodoro.json` — active session (goal, pid, started_at, daemon_started_at, work_end, break_end, music, block, session_number, is_long_break, work_minutes, break_minutes, paused_at). `started_at` is when the current work phase began and moves at every cycle boundary; `daemon_started_at` is the daemon process's own start time and does not, which is what identifies the pid as still ours. A record with `paused_at` set sits frozen until resumed; starting a new session first requires resuming or stopping it.
 - `~/.focus-music.pid` — playback PID, station label, and the process start time (`pid\nlabel\nstarted_at`). `--stop` reaches the process, the menu bar names what's playing, and the start time proves the PID has not been recycled before a duck request is sent to it
-- `~/Library/Application Support/Focus/history.jsonl` — one JSON line per finished work phase (plus `completed: false` partials when a run is stopped mid-work); feeds `focus stats` and the menu bar's "Today" line
+- `~/Library/Application Support/Focus/history.jsonl` — one JSON line per finished work phase (plus `completed: false` partials when a run is stopped mid-work); feeds `focus stats`, the Stats tab and the time shown in the menu bar panel
+- `~/Library/Application Support/Focus/todos.json`: today's tasks (`id`, `title`, `created_at`, `done_at`), shared by `focus todo` and the menu. Written atomically under a lock, so a menu click and a terminal command can't lose each other's edit
 
 ## Logs
 
@@ -137,7 +142,18 @@ Worth knowing: a failing `sudo -n block` is the quietest thing Focus can do wron
 
 ## Testing
 
-Tests under `Tests/FocusTests/` use Swift Testing (`#expect`, `@Test`), and CI runs them on every push. Locally, `swift test` needs a full Xcode; `swift build` works without one.
+Tests under `Tests/FocusTests/` use Swift Testing (`#expect`, `@Test`), and CI runs them on every push. With a full Xcode, `swift test` just works. With Command Line Tools only, the Testing framework is not on the default search or runtime paths, so link it next to the test bundle once and pass the paths explicitly:
+
+```bash
+FWK=/Library/Developer/CommandLineTools/Library/Developer/Frameworks
+swift build --build-tests
+ln -sfn "$FWK/Testing.framework" .build/debug/Testing.framework
+ln -sfn /Library/Developer/CommandLineTools/Library/Developer/usr/lib/lib_TestingInterop.dylib .build/debug/lib_TestingInterop.dylib
+swift test -Xswiftc -F -Xswiftc "$FWK" -Xlinker -F -Xlinker "$FWK" \
+  -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
+```
+
+The symlinks are needed because SIP strips `DYLD_FRAMEWORK_PATH` from the test runner, so the framework has to sit where the bundle's rpath already looks. `-plugin-path` is needed from the macOS 27 SDK on.
 
 ## Releasing
 

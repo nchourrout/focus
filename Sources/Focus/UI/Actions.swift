@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 /// Thin dispatch layer: every menu action spawns the focus CLI (same binary,
 /// different argv) and returns immediately. All state changes flow back
-/// through the state file, which AppState picks up on its next tick.
+/// through the state file, which AppState picks up as soon as it changes.
 @MainActor
 enum Actions {
     // MARK: Pomodoro
@@ -13,6 +13,9 @@ enum Actions {
         alert.informativeText = "What are you working on?"
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.placeholderString = "goal"
+        // Offer the first open task of the day. It arrives selected, so typing
+        // replaces it and Return accepts it.
+        field.stringValue = TodoList.default.items().first { !$0.isDone }?.title ?? ""
         alert.accessoryView = field
         alert.addButton(withTitle: "Start")
         alert.addButton(withTitle: "Cancel")
@@ -72,7 +75,7 @@ enum Actions {
 
     /// Toggle the website block and post a system notification with the new
     /// state so the click has visible effect (the menu bar icon also changes,
-    /// but only after AppState's next 1Hz refresh).
+    /// but only once AppState sees /etc/hosts change).
     static func toggleBlock() {
         let command = Shell.Command(
             Paths.sudoTarget,
@@ -89,7 +92,7 @@ enum Actions {
                 }
                 // Decode the documented payload rather than substring-matching
                 // it. On the (bug-shaped) failure path, skip the banner: the
-                // AppState tick reflects the real /etc/hosts state within 1s.
+                // AppState sees the real /etc/hosts state as soon as it changes.
                 let active: Bool
                 do {
                     active = try JSONDecoder()
@@ -160,6 +163,29 @@ enum Actions {
         }
     }
 
+    // MARK: Todo
+
+    // Like music, the task list needs no root, so these call Core directly.
+    // The write is atomic and locked against a concurrent `focus todo`, and
+    // AppState's directory watcher picks it up.
+
+    static func setTodoDone(_ id: UUID, _ done: Bool) {
+        todo("setDone") { try TodoList.default.setDone(.id(id), done) }
+    }
+
+    static func removeTodo(_ id: UUID) {
+        todo("remove") { try TodoList.default.remove(.id(id)) }
+    }
+
+    private static func todo(_ action: String, _ body: () throws -> TodoList.Item) {
+        do {
+            _ = try body()
+        } catch {
+            // Usually a task removed from a terminal while the menu was open.
+            Log.actions.error("todo \(action, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     // MARK: Private
 
     /// Fire-and-forget invocation of the focus binary. Launch errors are routed to
@@ -208,7 +234,7 @@ enum Actions {
                 NSApp.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
                 alert.messageText = "Focus couldn't change the block"
-                alert.informativeText = "Permission is fine, but the command failed. The usual cause is an invalid line in the block list: check Settings → Block list."
+                alert.informativeText = "Permission is fine, but the command failed. The usual cause is an invalid line in the block list: check Settings → Blocking."
                 alert.alertStyle = .warning
                 alert.runModal()
             }

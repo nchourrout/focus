@@ -1,10 +1,11 @@
-# One site per line. www. is added automatically, list the bare domain.
+# One site per line. www., m. and mobile. are added automatically, list the bare domain.
 
 youtube.com
 facebook.com
 instagram.com
 web.whatsapp.com
 twitter.com
+x.com
 reddit.com
 linkedin.com
 makerworld.com

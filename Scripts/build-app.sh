@@ -29,10 +29,25 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN" "$APP/Contents/MacOS/focus"
 
-# Bundle.module resolves to this, alongside the binary.
-if [[ -d "$BIN_DIR/Focus_Focus.bundle" ]]; then
-  cp -R "$BIN_DIR/Focus_Focus.bundle" "$APP/Contents/MacOS/"
+# SwiftPM resource bundles, Focus's own and its dependencies'. The generated
+# `Bundle.module` looks in the app's Contents/Resources, then next to the
+# binary's bundle URL, and traps when neither has it: a missing
+# KeyboardShortcuts bundle crashed the app on opening the Shortcuts tab. Older
+# toolchains also tried the build directory, which hid this on the machine
+# that built the app. Focus_Focus.bundle also goes next to the binary, because
+# install.sh copies Contents/MacOS alone into the privileged helper directory,
+# where that is the only place Bundle.module can find it.
+shopt -s nullglob
+bundles=("$BIN_DIR"/*.bundle)
+shopt -u nullglob
+if (( ${#bundles[@]} == 0 )); then
+  echo "error: no resource bundles in $BIN_DIR" >&2
+  exit 1
 fi
+for bundle in "${bundles[@]}"; do
+  cp -R "$bundle" "$APP/Contents/Resources/"
+done
+cp -R "$BIN_DIR/Focus_Focus.bundle" "$APP/Contents/MacOS/"
 
 # Generate AppIcon.icns from the inline Swift renderer. Building a real
 # iconset (multiple sizes + @2x) so Finder, Dock, Launchpad, etc. all look

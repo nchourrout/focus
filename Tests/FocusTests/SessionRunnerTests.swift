@@ -55,14 +55,13 @@ private final class FakeEffects: SessionEffects {
     private static let breakEnd: TimeInterval = 1000 + 30 * 60
 
     private func makeCadence(
-        keepCycling: Bool = false, stopAfterSet: Bool = false,
+        keepCycling: Bool = false,
         sessionsBeforeLongBreak: Int = 4, longBreakMinutes: Int = 15
     ) -> PomodoroCadence {
         PomodoroCadence(
             longBreakMinutes: longBreakMinutes,
             sessionsBeforeLongBreak: sessionsBeforeLongBreak,
-            keepCycling: keepCycling,
-            stopAfterSet: stopAfterSet
+            keepCycling: keepCycling
         )
     }
 
@@ -234,62 +233,6 @@ private final class FakeEffects: SessionEffects {
         run(plan: makePlan(), session: session, effects: effects)
 
         #expect(effects.sleeps == 2, "no second work phase")
-        #expect(session.current == nil)
-    }
-
-    // MARK: Set boundary
-
-    @Test func stopAfterSetEndsAtTheBoundaryWithoutAFinalBreak() throws {
-        let session = try makeSession(sessionNumber: 4)
-        let effects = FakeEffects(
-            clock: Self.start,
-            cadence: makeCadence(keepCycling: true, stopAfterSet: true, sessionsBeforeLongBreak: 4)
-        )
-
-        run(plan: makePlan(), session: session, effects: effects)
-
-        #expect(effects.sleeps == 1, "the set ends after the work phase, skipping the final break")
-        #expect(effects.events == [
-            .applyBlock,
-            .startMusic(.preset("dronezone")),
-            .slept(until: Self.workEnd),
-            .removeBlock,
-            .stopMusic,
-        ])
-        // A terminal marker is left for the menu bar app to notice.
-        let marker = try #require(session.current)
-        #expect(marker.setComplete)
-        #expect(marker.sessionNumber == 4)
-        #expect(marker.workEnd == Self.workEnd, "deadlines pulled back so the phase reads .done")
-        #expect(marker.breakEnd == Self.workEnd)
-    }
-
-    @Test func stopAfterSetIgnoredMidSet() throws {
-        let session = try makeSession(sessionNumber: 2)
-        let effects = FakeEffects(
-            clock: Self.start,
-            cadence: makeCadence(keepCycling: true, stopAfterSet: true, sessionsBeforeLongBreak: 4)
-        )
-        effects.onSleep = { count in
-            if count == 2 { effects.cadence.keepCycling = false }
-        }
-
-        run(plan: makePlan(), session: session, effects: effects)
-
-        #expect(effects.sleeps == 2, "session 2 of 4 takes its break as usual")
-        #expect(session.current?.setComplete != true)
-    }
-
-    @Test func stopAfterSetNeedsCyclingOn() throws {
-        let session = try makeSession(sessionNumber: 4)
-        let effects = FakeEffects(
-            clock: Self.start,
-            cadence: makeCadence(keepCycling: false, stopAfterSet: true, sessionsBeforeLongBreak: 4)
-        )
-
-        run(plan: makePlan(), session: session, effects: effects)
-
-        #expect(effects.sleeps == 2, "without cycling there is no set to stop after")
         #expect(session.current == nil)
     }
 

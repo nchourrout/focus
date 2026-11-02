@@ -1,9 +1,15 @@
 import Foundation
 import SwiftUI
 
-/// Menu bar app's live view of the focus state. Polls the on-disk state file and
-/// `/etc/hosts` once a second. Emits @Published changes only when values actually
-/// differ so SwiftUI doesn't re-render every tick unnecessarily.
+/// Menu bar app's live view of the focus state: the on-disk pomodoro state
+/// file, `/etc/hosts`, and the music PID file. Emits @Published changes only
+/// when values actually differ so SwiftUI doesn't re-render on every read.
+///
+/// Reads are event-driven. A refresh runs when one of those files changes
+/// (`DirectoryWatcher`), when the current phase reaches its deadline, and on a
+/// slow heartbeat for what no file event announces: a daemon or player that
+/// died without cleaning up. A 1 Hz poll used to do all of it, waking the app
+/// every second for the whole day to find, almost always, nothing new.
 @MainActor
 final class AppState: ObservableObject {
     @Published private(set) var pomodoro: PomodoroSession.Active?
@@ -17,29 +23,71 @@ final class AppState: ObservableObject {
     /// What's playing. Nil while stopped, or when an older build wrote a
     /// label-less PID file.
     @Published private(set) var musicNowPlaying: Station?
-    // No @Published timeLeft: per-second updates would also re-render the menu
-    // dropdown via @ObservedObject, which resets AppKit's hover selection.
-    // Views that need a live countdown drive their own ticker (TimelineView).
+    /// Today's tasks, rollover applied. See `TodoList`.
+    @Published private(set) var todos: [TodoList.Item] = []
+    /// Today's finished work, from the history log. Re-read only when the log
+    /// changes or the day does, since the log is append-only and unbounded.
+    @Published private(set) var focusedToday = SessionHistory.Totals(sessions: 0, minutes: 0)
+    /// What `focusedToday` was computed from: the log's modification date and
+    /// the day it was read on.
+    private var focusedTodayKey: FocusedTodayKey?
+    // No @Published timeLeft: per-second updates would re-render every view
+    // observing this, open or not. Views that need a live countdown drive
+    // their own ticker (TimelineView).
 
-    private var timer: Timer?
+    private var heartbeat: Timer?
+    /// One-shot at the current phase's deadline. The daemon does write the
+    /// state file at boundaries, but a break that runs out with nothing after
+    /// it is a time passing, not a write, and the icon should flip on time.
+    private var boundaryTimer: Timer?
+    private var watcher: DirectoryWatcher?
     private var refreshInFlight = false
+    /// Set when a refresh is asked for while one is running, so the change that
+    /// triggered it is read after the in-flight one finishes rather than lost.
+    private var refreshQueued = false
     /// Suppress notifications on the first apply: at launch we may already see
     /// a running session (the daemon survived an app restart) and we shouldn't
     /// fire "Pomodoro started" against a session that began ages ago.
     private var hasAppliedOnce = false
-    /// Confirms dead-daemon sightings across consecutive ticks; see its type
-    /// for why one sighting isn't enough. Lives on the main actor, which is
-    /// also where the (cheap) liveness probe runs.
-    private var staleDetector = StaleSessionDetector()
+    /// Confirms dead-daemon sightings across two reads; see its type for why
+    /// one sighting isn't enough. Lives on the main actor, which is also where
+    /// the (cheap) liveness probe runs.
+    private var staleDetector = StaleSessionDetector(minimumGap: 2)
+
+    /// How often to look without being told to. Bounds how long a crashed
+    /// daemon's leftover shows before recovery: two heartbeats, 10s at most.
+    private static let heartbeatInterval: TimeInterval = 5
 
     init() {
         Task { await refresh() }
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        let heartbeat = Timer(timeInterval: Self.heartbeatInterval, repeats: true) { [weak self] _ in
+            Task { await self?.refresh() }
+        }
+        // Lets the system batch this wakeup with others; nothing here is that
+        // time-sensitive.
+        heartbeat.tolerance = 1
+        RunLoop.main.add(heartbeat, forMode: .common)
+        self.heartbeat = heartbeat
+        // The state and PID files sit in the home directory, the task list and
+        // history in Application Support. Application Support may not exist
+        // yet on a fresh install, and a directory that isn't there can't be
+        // watched.
+        try? FileManager.default.createDirectory(at: Paths.appSupport, withIntermediateDirectories: true)
+        watcher = DirectoryWatcher(files: [
+            Paths.pomodoroState,
+            Paths.musicPid,
+            Paths.todos,
+            Paths.history,
+            Paths.hosts,
+        ]) { [weak self] in
             Task { await self?.refresh() }
         }
     }
 
-    deinit { timer?.invalidate() }
+    deinit {
+        heartbeat?.invalidate()
+        boundaryTimer?.invalidate()
+    }
 
     /// True while a work or break phase is in progress.
     var isRunning: Bool {
@@ -48,21 +96,58 @@ final class AppState: ObservableObject {
 
     /// Read /etc/hosts and the pomodoro state file off the main thread so the
     /// menu bar doesn't stall on disk I/O, then publish changes back on @MainActor.
-    /// If the previous tick is still draining (slow disk, suspended laptop), skip
-    /// this one rather than letting refreshes accumulate and publish out of order.
+    /// Refreshes never overlap, so they can't publish out of order. One asked
+    /// for mid-flight runs once the current one is done; any number of such
+    /// requests collapse into that one, since it reads everything afresh.
     func refresh() async {
-        guard !refreshInFlight else { return }
+        guard !refreshInFlight else {
+            refreshQueued = true
+            return
+        }
         refreshInFlight = true
         defer { refreshInFlight = false }
-        let snapshot = await Task.detached {
-            (block: SiteBlock.default.isActive,
-             state: PomodoroSession.default.current,
-             music: LocalPlayback.playing)
-        }.value
-        apply(
-            blockActive: snapshot.block, state: snapshot.state,
-            musicPlaying: snapshot.music.isPlaying, musicNowPlaying: snapshot.music.station
-        )
+        repeat {
+            refreshQueued = false
+            let lastKey = focusedTodayKey
+            let snapshot = await Task.detached {
+                let key = FocusedTodayKey.current()
+                return (block: SiteBlock.default.isActive,
+                        state: PomodoroSession.default.current,
+                        music: LocalPlayback.playing,
+                        todos: TodoList.default.items(),
+                        focusKey: key,
+                        focused: key == lastKey
+                            ? nil
+                            : SessionHistory.todayTotals(in: SessionHistory.default.entries()))
+            }.value
+            // Kept out of `apply`: neither has any bearing on the session's
+            // transitions, and the heartbeat re-reading them is also what
+            // rolls both over at midnight.
+            if snapshot.todos != todos { todos = snapshot.todos }
+            focusedTodayKey = snapshot.focusKey
+            if let focused = snapshot.focused, focused != focusedToday { focusedToday = focused }
+            apply(
+                blockActive: snapshot.block, state: snapshot.state,
+                musicPlaying: snapshot.music.isPlaying, musicNowPlaying: snapshot.music.station
+            )
+            scheduleBoundaryRefresh()
+        } while refreshQueued
+    }
+
+    /// Re-arm the one-shot for the running phase's deadline, or clear it when
+    /// nothing is running. A paused session publishes no `pomodoro`, so it
+    /// arms nothing.
+    private func scheduleBoundaryRefresh() {
+        boundaryTimer?.invalidate()
+        boundaryTimer = nil
+        guard let pomodoro, phase != .done else { return }
+        let timeLeft = PomodoroSession.default.phase(of: pomodoro).timeLeft
+        // A little past the deadline, so the read lands on the far side of it.
+        let timer = Timer(timeInterval: timeLeft + 0.2, repeats: false) { [weak self] _ in
+            Task { await self?.refresh() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        boundaryTimer = timer
     }
 
     private func apply(
@@ -79,32 +164,14 @@ final class AppState: ObservableObject {
         if newMusic != musicPlaying { musicPlaying = newMusic }
         if newNowPlaying != musicNowPlaying { musicNowPlaying = newNowPlaying }
 
-        // Set-complete marker: the daemon ended a "stop after each set" run (it
-        // already unblocked and stopped music). Post the actionable "start
-        // another set" notification, then clear the file so we settle to idle.
-        // Skip the notification for a marker first seen at launch (the set ended
-        // while the app was closed) — but still clear it. Clearing here is the
-        // one place AppState writes the state file; safe because the daemon has
-        // exited, so there's no concurrent writer.
-        if let s = state, s.setComplete {
-            if wasApplied {
-                LocalNotifications.postSetComplete(goal: s.goal)
-                Sounds.play(.sessionEnd)
-            }
-            PomodoroSession.default.clear()
-            pomodoro = nil
-            phase = .done
-            return
-        }
-
         // Dead-daemon recovery: a state file whose pid no longer belongs to a
         // live Focus daemon is what a crash, `kill -9`, or a reboot leaves
         // behind. Left alone it shows as a phantom countdown forever, and a
         // crash mid-work-phase keeps the /etc/hosts block on with nothing to
         // lift it. The detector demands two consecutive sightings so a normal
         // `pomodoro stop` (which clears the file itself, up to ~1s after the
-        // daemon dies) never trips this path. Recovery mirrors set-complete:
-        // always clear and unblock, but stay quiet when the leftover predates
+        // daemon dies) never trips this path. Recovery always clears and
+        // unblocks, but stay quiet when the leftover predates
         // this launch — that session ended while the app was closed.
         var state = state
         // `confirmStale` takes the optional itself and clears its own counter on
@@ -145,7 +212,7 @@ final class AppState: ObservableObject {
         if let s = state, s.pausedAt != nil {
             if pomodoro != nil { pomodoro = nil }
             // Guarded like every other publish here: an unguarded assignment
-            // fires objectWillChange on all 1 Hz ticks of the pause, re-rendering
+            // fires objectWillChange on every refresh during the pause, re-rendering
             // the menu bar for the whole time the session sits frozen.
             if phase != .done { phase = .done }
             if pausedSession != s { pausedSession = s }
@@ -239,6 +306,21 @@ final class AppState: ObservableObject {
     }
 }
 
+/// When the history log was last written, and today's date: `focusedToday`
+/// only needs re-reading when either moves.
+struct FocusedTodayKey: Equatable, Sendable {
+    let modified: Date?
+    let day: Date
+
+    static func current() -> FocusedTodayKey {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: Paths.history.path)
+        return FocusedTodayKey(
+            modified: attributes?[.modificationDate] as? Date,
+            day: Calendar.current.startOfDay(for: Date())
+        )
+    }
+}
+
 /// The status item's text: the countdown, and the goal after it when the user
 /// has asked for one. Pure, so the caller decides where `showGoal` comes from.
 func menuBarLabel(countdown: TimeInterval, goal: String, showGoal: Bool) -> String {
@@ -275,3 +357,4 @@ func formatCountdown(_ t: TimeInterval) -> String {
     let total = max(0, Int(t))
     return String(format: "%d:%02d", total / 60, total % 60)
 }
+

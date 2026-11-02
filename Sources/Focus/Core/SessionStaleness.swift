@@ -28,22 +28,33 @@ enum SessionStaleness {
     }
 }
 
-/// Confirms staleness across two consecutive observations (~2 s at the menu
-/// bar's 1 Hz poll) so recovery only fires on a genuinely abandoned session.
+/// Confirms staleness across two observations at least `minimumGap` apart, so
+/// recovery only fires on a genuinely abandoned session.
 ///
-/// One tick is not enough: a normal `pomodoro stop` SIGTERMs the daemon and
+/// One sighting is not enough: a normal `pomodoro stop` SIGTERMs the daemon and
 /// clears the state file itself, leaving a dead-pid-but-present record visible
 /// for up to the second `stop()` waits before cleaning up. Acting on that first
 /// sighting would race the stop's own cleanup and post a spurious "session
 /// interrupted" banner for a stop the user asked for.
+///
+/// The gap is measured in time, not in reads, because the menu bar refreshes on
+/// file events as well as on its heartbeat: two reads can land milliseconds
+/// apart, well inside the window a stop needs.
 struct StaleSessionDetector {
     private var pendingStalePID: Int32?
+    private var firstSighting: TimeInterval = 0
+    let minimumGap: TimeInterval
 
-    /// Feed every observed state-file read (nil included). Returns true exactly
-    /// when the same stale pid has now been seen twice in a row; any healthy
-    /// read or absent file resets the count.
+    init(minimumGap: TimeInterval = 0) {
+        self.minimumGap = minimumGap
+    }
+
+    /// Feed every observed state-file read (nil included). Returns true once the
+    /// same stale pid has been seen again at least `minimumGap` after it was
+    /// first seen; any healthy read or absent file resets the count.
     mutating func confirmStale(
         _ active: PomodoroSession.Active?,
+        now: TimeInterval = Date().timeIntervalSince1970,
         liveness: (_ pid: Int32, _ startedAt: TimeInterval) -> Bool = {
             isOurProcess(pid: $0, expectedStart: $1)
         }
@@ -52,7 +63,11 @@ struct StaleSessionDetector {
             pendingStalePID = nil
             return false
         }
-        defer { pendingStalePID = active.pid }
-        return pendingStalePID == active.pid
+        guard pendingStalePID == active.pid else {
+            pendingStalePID = active.pid
+            firstSighting = now
+            return false
+        }
+        return now - firstSighting >= minimumGap
     }
 }

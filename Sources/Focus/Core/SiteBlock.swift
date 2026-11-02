@@ -39,8 +39,8 @@ struct SiteBlock {
         (try? read())?.contains(Self.markerStart) ?? false
     }
 
-    /// Install block entries. Each site in `sites` gets bare + www. variants in
-    /// both IPv4 and IPv6. `doh` true also blackholes common DNS-over-HTTPS
+    /// Install block entries. Each site in `sites` gets every `hostPrefixes`
+    /// variant in both IPv4 and IPv6. `doh` true also blackholes common DNS-over-HTTPS
     /// endpoints (exact match, no www. variant). Returns the number of entries
     /// installed. Requires root. Flushes DNS on success.
     @discardableResult
@@ -81,6 +81,13 @@ struct SiteBlock {
     static let markerEnd = "# === FOCUS BLOCK END ==="
     static let redirectIP = "127.0.0.1"
     static let redirectIPv6 = "::1"
+
+    /// Hostnames each listed site expands to. /etc/hosts has no wildcards, so a
+    /// bare `youtube.com` would leave `m.youtube.com` reachable, and a phone-
+    /// sized page is still the whole site. `m.` and `mobile.` are the mobile
+    /// hosts the big social and video sites actually serve; anything rarer
+    /// (old.reddit.com) goes in the list as its own line.
+    static let hostPrefixes = ["", "www.", "m.", "mobile."]
 
     /// Common DNS-over-HTTPS resolver endpoints. Browsers with "Secure DNS"
     /// enabled query these directly over HTTPS, bypassing /etc/hosts. Routing
@@ -129,10 +136,10 @@ struct SiteBlock {
     static func renderBlock(sites: [String], extraExactDomains: [String]) -> String {
         var entries = [markerStart]
         for site in sites {
-            entries.append("\(redirectIP) \(site)")
-            entries.append("\(redirectIPv6) \(site)")
-            entries.append("\(redirectIP) www.\(site)")
-            entries.append("\(redirectIPv6) www.\(site)")
+            for prefix in hostPrefixes {
+                entries.append("\(redirectIP) \(prefix)\(site)")
+                entries.append("\(redirectIPv6) \(prefix)\(site)")
+            }
         }
         for domain in extraExactDomains {
             entries.append("\(redirectIP) \(domain)")
