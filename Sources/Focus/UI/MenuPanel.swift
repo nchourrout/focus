@@ -332,6 +332,8 @@ private struct TodoRow: View {
                 iconButton("xmark", help: "Remove") { Actions.removeTodo(item.id) }
             }
         }
+        // Match the 20pt hover buttons so revealing them doesn't grow the row.
+        .frame(minHeight: 20)
         .padding(.vertical, 4)
         .padding(.horizontal, 6)
         .background(
