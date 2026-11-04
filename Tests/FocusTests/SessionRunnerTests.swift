@@ -15,6 +15,13 @@ private final class FakeEffects: SessionEffects {
 
     var clock: TimeInterval
     var cadence: PomodoroCadence
+    var tasks: [TodoList.Item] = []
+    /// The day each task-list read was pinned to.
+    private(set) var tasksAsOf: [TimeInterval] = []
+    func todayTasks(asOf start: TimeInterval) -> [TodoList.Item] {
+        tasksAsOf.append(start)
+        return tasks
+    }
     private(set) var events: [Event] = []
     /// Runs after each sleep with the number of sleeps so far. Lets a test change
     /// the cadence mid-run, or pull the state file out from under the loop.
@@ -171,6 +178,42 @@ private final class FakeEffects: SessionEffects {
     }
 
     // MARK: Cycling
+
+    /// Ticking off the task mid-session: the session still runs out, and
+    /// the next one takes the first task left open.
+    @Test func cyclingMovesOnFromATickedTask() throws {
+        let session = try makeSession()
+        let effects = FakeEffects(clock: Self.start, cadence: makeCadence(keepCycling: true))
+        effects.tasks = [
+            TodoList.Item(id: UUID(), title: "write tests", createdAt: 0, doneAt: Self.start + 60),
+            TodoList.Item(id: UUID(), title: "ship it", createdAt: 0, doneAt: nil),
+        ]
+        var secondSession: PomodoroSession.Active?
+        effects.onSleep = { count in
+            if count == 3 { secondSession = session.current }
+            if count == 4 { effects.cadence.keepCycling = false }
+        }
+
+        run(plan: makePlan(), session: session, effects: effects)
+
+        #expect(secondSession?.goal == "ship it")
+        #expect(secondSession?.sessionNumber == 2)
+    }
+
+    @Test func cyclingEndsOnceEveryTaskIsTicked() throws {
+        let session = try makeSession()
+        let effects = FakeEffects(clock: Self.start, cadence: makeCadence(keepCycling: true))
+        effects.tasks = [
+            TodoList.Item(id: UUID(), title: "write tests", createdAt: 0, doneAt: Self.start + 60),
+        ]
+
+        run(plan: makePlan(), session: session, effects: effects)
+
+        #expect(effects.sleepDeadlines == [Self.workEnd, Self.breakEnd], "the break runs out, then nothing")
+        #expect(effects.tasksAsOf == [Self.start], "read as of the session's day, so midnight can't drop the tick")
+        #expect(session.current == nil, "teardown clears the state file")
+        #expect(effects.events.last == .stopMusic)
+    }
 
     @Test func cyclingRollsDeadlinesAndRestoresTheBlock() throws {
         let session = try makeSession()

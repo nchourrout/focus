@@ -40,6 +40,9 @@ enum LocalPlayback {
         }
         stop()
         let handle = try Shell.spawn(Shell.Command(executable, arguments))
+        // Whoever started it (the menu, a pomodoro, `focus music`), it is what
+        // the panel's play button brings back after a pause.
+        Defaults.lastStation = station
         // File format: "pid\nlabel\nstarted_at". The label lets the menu bar say
         // what's playing without re-deriving it from the stream URL, and tells
         // `duckable` whether the process it would signal is a stream. The start

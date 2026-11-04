@@ -12,6 +12,11 @@ protocol SessionEffects {
     var now: TimeInterval { get }
     /// Read at every phase boundary, never cached — see `PomodoroCadence`.
     var cadence: PomodoroCadence { get }
+    /// The task list as of the day `start` falls on, read at each break's end
+    /// to see whether the one being worked on was ticked off. Pinned to the
+    /// session's start, not now, so a task ticked before midnight is still
+    /// there when the break ends after it. See `TodoList.nextGoal`.
+    func todayTasks(asOf start: TimeInterval) -> [TodoList.Item]
     func sleep(until deadline: TimeInterval)
     func applyBlock()
     func removeBlock()
@@ -105,7 +110,11 @@ struct SessionRunner {
     ///   the next work phase begins.
     /// - When the cadence says to keep cycling, the loop asks `PomodoroSession`
     ///   for the next iteration, rewrites the state file, and starts a fresh work
-    ///   phase with the same goal. Music carries over so playback isn't restarted.
+    ///   phase. Music carries over so playback isn't restarted.
+    /// - The goal carries over too, unless its task was ticked off during the
+    ///   session: then the next work phase takes the first open task, or the
+    ///   run ends when none is left. The session it was ticked in still runs to
+    ///   its end. See `TodoList.nextGoal`.
     func run(workEnd: TimeInterval, breakEnd: TimeInterval) {
         // Resuming into a break (`pomodoro resume` on a session paused while
         // resting) hands us a work deadline that is already behind us. That
@@ -156,11 +165,14 @@ struct SessionRunner {
             // phantom next session.
             guard let prev = session.current else { break }
 
+            guard let goal = TodoList.nextGoal(after: prev.goal, in: effects.todayTasks(asOf: prev.startedAt)) else { break }
+
             let next = session.nextSession(
                 after: prev,
                 workMinutes: plan.workMinutes, breakMinutes: plan.breakMinutes,
                 longBreakMinutes: atBreakEnd.longBreakMinutes,
                 sessionsBeforeLongBreak: atBreakEnd.sessionsBeforeLongBreak,
+                goal: goal,
                 at: effects.now
             )
             Self.save(next, to: session, what: "session \(next.sessionNumber)")
@@ -184,6 +196,9 @@ struct SessionRunner {
 struct LiveSessionEffects: SessionEffects {
     var now: TimeInterval { Date().timeIntervalSince1970 }
     var cadence: PomodoroCadence { .fromSettings }
+    func todayTasks(asOf start: TimeInterval) -> [TodoList.Item] {
+        TodoList.default.items(now: Date(timeIntervalSince1970: start))
+    }
 
     /// Sleep to an absolute wall-clock deadline.
     ///

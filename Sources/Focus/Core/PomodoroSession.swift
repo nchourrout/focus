@@ -227,12 +227,14 @@ struct PomodoroSession {
     }
 
     /// Roll an Active into the next iteration of the same session (auto-start).
-    /// Goal, pid, music, block are carried over; `sessionNumber` advances and the
-    /// break follows the long-break cadence (its length and the recorded
-    /// `isLongBreak` flag); deadlines are recomputed from `at`. The pid stays —
-    /// the daemon is still the same process.
+    /// Pid, music and block are carried over, and so is the goal unless `goal`
+    /// names the next task. `sessionNumber` advances and the break follows the
+    /// long-break cadence (its length and the recorded `isLongBreak` flag);
+    /// deadlines are recomputed from `at`. The pid stays,
+    /// since the daemon is still the same process.
     func nextSession(after prev: Active, workMinutes: Int, breakMinutes: Int,
                      longBreakMinutes: Int = 0, sessionsBeforeLongBreak: Int = 0,
+                     goal: String? = nil,
                      at start: TimeInterval = Date().timeIntervalSince1970) -> Active {
         let sessionNumber = prev.sessionNumber + 1
         let long = hasLongBreak(sessionNumber: sessionNumber, every: sessionsBeforeLongBreak)
@@ -240,7 +242,7 @@ struct PomodoroSession {
             workMinutes: workMinutes, breakMinutes: long ? longBreakMinutes : breakMinutes, at: start
         )
         return Active(
-            goal: prev.goal, pid: prev.pid, startedAt: start,
+            goal: goal ?? prev.goal, pid: prev.pid, startedAt: start,
             workEnd: workEnd, breakEnd: breakEnd,
             music: prev.music, block: prev.block,
             // Same process, so its start time carries even though `startedAt`

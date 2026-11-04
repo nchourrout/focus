@@ -106,6 +106,22 @@ struct TodoList {
         }
     }
 
+    // MARK: Rolling on
+
+    /// What the next work phase of a cycling run should be about, once the
+    /// current one ends: `goal` itself while its task is open (or when it was
+    /// never a task), the first open task once it was ticked off, or nil when
+    /// nothing is left open and the run should end.
+    ///
+    /// A session only carries its goal, so the task is matched by title, as
+    /// the menu bar's "now" badge does. A goal typed freehand matches nothing
+    /// and keeps going, as it always has.
+    static func nextGoal(after goal: String, in items: [Item]) -> String? {
+        let matching = items.filter { $0.title == goal }
+        guard !matching.isEmpty, matching.allSatisfy(\.isDone) else { return goal }
+        return items.first { !$0.isDone }?.title
+    }
+
     // MARK: Internals (tested via @testable)
 
     /// Drop tasks finished before the start of `now`'s day. Open tasks stay,

@@ -24,18 +24,26 @@ struct MenuPanel: View {
                 .padding(.vertical, 8)
         }
         .frame(width: 300)
-        // Size the panel to its content, so it shrinks when a task goes away
-        // rather than keeping the tallest height it ever had.
+        // The content's own height, never the window's: `PanelWindow` sizes
+        // the window from it.
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
-        .background(OpaquePanel())
+        .background(PanelWindow())
     }
 }
 
-/// The window-style MenuBarExtra panel is glass by default, and on recent
-/// macOS that is translucent enough to read the window behind it through the
-/// task list. Make the hosting window itself opaque.
-private struct OpaquePanel: NSViewRepresentable {
+/// Two fixes to the window-style MenuBarExtra's own window, made from a view
+/// in the content's background, which SwiftUI sizes to the content.
+///
+/// The window is glass by default, and on recent macOS that is translucent
+/// enough to read the window behind it through the task list, so it is made
+/// opaque.
+///
+/// It also grows with its content but never shrinks back: once a session or a
+/// few tasks had made it tall, an emptier panel sat in a blank band of the old
+/// height. So the window is held to this view's height, with its top edge kept
+/// under the menu bar.
+private struct PanelWindow: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { Probe() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 
@@ -51,6 +59,25 @@ private struct OpaquePanel: NSViewRepresentable {
                 effect.state = .inactive
                 effect.material = .windowBackground
             }
+            fitWindow()
+        }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            // Out of the layout pass that sized us: resizing the window from
+            // inside it would re-enter the hosting view's layout.
+            DispatchQueue.main.async { [weak self] in self?.fitWindow() }
+        }
+
+        private func fitWindow() {
+            let height = bounds.height
+            guard let window, height > 0 else { return }
+            let current = window.contentRect(forFrameRect: window.frame).height
+            guard abs(height - current) > 0.5 else { return }
+            var frame = window.frame
+            frame.origin.y += current - height
+            frame.size.height += height - current
+            window.setFrame(frame, display: false)
         }
     }
 }
@@ -84,9 +111,15 @@ private struct SessionHeader: View {
     }
 
     private func running(_ p: PomodoroSession.Active) -> some View {
+        // Built outside the tick: neither the task list nor the setting it
+        // reads changes from one second to the next.
+        let goal = goalLine(p)
+        // With every task ticked there is no session to skip to: skip-break
+        // would end the run, which Stop already says plainly.
+        let canSkipBreak = TodoList.nextGoal(after: p.goal, in: state.todos) != nil
         // The panel only exists on screen while open, so ticking here costs
         // nothing the rest of the day.
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        return TimelineView(.periodic(from: .now, by: 1)) { context in
             let now = context.date.timeIntervalSince1970
             let (phase, timeLeft) = PomodoroSession.default.phase(of: p, at: now)
             VStack(alignment: .leading, spacing: 6) {
@@ -98,13 +131,11 @@ private struct SessionHeader: View {
                     }
                 }
                 Text(formatCountdown(timeLeft)).countdown()
-                Text(p.goal)
-                    .font(.headline)
-                    .lineLimit(2)
+                goal
                 ProgressView(value: progress(p, phase, timeLeft))
                     .tint(phase == .break ? .green : .accentColor)
                 HStack(spacing: 8) {
-                    if phase == .break {
+                    if phase == .break, canSkipBreak {
                         Button("Skip break") { Actions.skipBreak() }
                     }
                     Button("Pause") { Actions.pausePomodoro() }
@@ -121,13 +152,37 @@ private struct SessionHeader: View {
         return VStack(alignment: .leading, spacing: 6) {
             Text("Paused").capsLabel()
             Text(formatCountdown(timeLeft)).countdown().foregroundStyle(.secondary)
-            Text(p.goal).font(.headline).lineLimit(2)
+            goalLine(p)
             HStack(spacing: 8) {
                 Button("Resume") { Actions.resumePomodoro() }
                 Button("Discard") { Actions.stopPomodoro() }
             }
             .controlSize(.small)
             .padding(.top, 4)
+        }
+    }
+
+    /// The goal, ticked once its task is done, with what the run does about
+    /// it: the session still runs out, and the next one moves on (see
+    /// `TodoList.nextGoal`).
+    @ViewBuilder
+    private func goalLine(_ p: PomodoroSession.Active) -> some View {
+        let next = TodoList.nextGoal(after: p.goal, in: state.todos)
+        if next == p.goal {
+            Text(p.goal).font(.headline).lineLimit(2)
+        } else {
+            Label {
+                Text(p.goal).lineLimit(2)
+            } icon: {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+            }
+            .font(.headline)
+            .foregroundStyle(.secondary)
+            // Named whether or not cycling is on: Skip break starts on it too.
+            Text(next.map { "Up next: \($0)" } ?? "All done. Focus stops after this break.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
@@ -142,7 +197,19 @@ private struct SessionHeader: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
-            if let suggested, !typingGoal {
+            if typingGoal {
+                HStack(spacing: 6) {
+                    TextField("What are you working on?", text: $customGoal)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($goalFieldFocused)
+                        .onSubmit(startCustomGoal)
+                        .onExitCommand { typingGoal = false; customGoal = "" }
+                    Button(action: startCustomGoal) {
+                        Image(systemName: "play.fill")
+                    }
+                    .disabled(customGoal.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            } else if let suggested {
                 Button {
                     Actions.startPomodoro(goal: suggested.title)
                 } label: {
@@ -159,17 +226,16 @@ private struct SessionHeader: View {
                 .buttonStyle(.link)
                 .font(.caption)
             } else {
-                HStack(spacing: 6) {
-                    TextField("What are you working on?", text: $customGoal)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($goalFieldFocused)
-                        .onSubmit(startCustomGoal)
-                        .onExitCommand { typingGoal = false; customGoal = "" }
-                    Button(action: startCustomGoal) {
-                        Image(systemName: "play.fill")
-                    }
-                    .disabled(customGoal.trimmingCharacters(in: .whitespaces).isEmpty)
+                // Nothing to suggest. One field to type into, the task list's,
+                // rather than two stacked ones asking much the same thing.
+                Text("Add a task below to start on it.")
+                    .foregroundStyle(.secondary)
+                Button("Or just type a goal\u{2026}") {
+                    typingGoal = true
+                    goalFieldFocused = true
                 }
+                .buttonStyle(.link)
+                .font(.caption)
             }
         }
     }
@@ -210,6 +276,7 @@ private struct SessionHeader: View {
 
 private struct TodayList: View {
     @ObservedObject var state: AppState
+    @Environment(\.openWindow) private var openWindow
     @ViewState private var newTask = ""
     /// Shown under the field when an add fails, usually a full list filled
     /// from a terminal while the panel was open.
@@ -221,16 +288,23 @@ private struct TodayList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
+            HStack(spacing: 4) {
                 Text("Today").capsLabel()
                 Spacer()
+                let focused = state.focusedToday
+                if focused.minutes > 0 {
+                    Button("\(focused.describe()) focused") { openWindow.settings(.stats) }
+                        .buttonStyle(.plain)
+                        .help("Focused \(focused.summary()) today. Click for stats.")
+                }
                 if !state.todos.isEmpty {
+                    if focused.minutes > 0 { Text("\u{00B7}") }
                     Text("\(doneCount) of \(state.todos.count) done")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
                 }
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
             ForEach(state.todos) { item in
                 TodoRow(
                     item: item,
@@ -376,40 +450,34 @@ private struct PanelFooter: View {
             .buttonStyle(Chip(active: state.blockActive))
             .help(state.blockActive ? "Unblock websites" : "Block websites")
 
-            Menu {
-                ForEach(Station.presets, id: \.self) { station in
-                    Toggle(station.displayName, isOn: Binding(
-                        get: { state.musicNowPlaying == station },
-                        set: { _ in Actions.playMusic(station) }
-                    ))
+            // One chip, two targets: the station menu, and play/pause beside it.
+            HStack(spacing: 2) {
+                Menu {
+                    ForEach(Station.presets, id: \.self) { station in
+                        Toggle(station.displayName, isOn: Binding(
+                            get: { state.musicNowPlaying == station },
+                            set: { _ in Actions.playMusic(station) }
+                        ))
+                    }
+                    Divider()
+                    Button("Stop music") { Actions.stopMusic() }
+                        .disabled(!state.musicPlaying)
+                } label: {
+                    Label(musicTitle, systemImage: "music.note")
+                        .font(.caption)
+                        .lineLimit(1)
                 }
-                Divider()
-                Button("Stop music") { Actions.stopMusic() }
-                    .disabled(!state.musicPlaying)
-            } label: {
-                Label(musicTitle, systemImage: "music.note")
-                    .font(.caption)
-                    .lineLimit(1)
+                .controlSize(.small)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .padding(.leading, 8)
+                .padding(.vertical, 4)
+                playPauseButton
             }
-            .controlSize(.small)
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
             .chipBackground(active: state.musicPlaying)
 
             Spacer(minLength: 4)
-
-            if state.focusedToday.minutes > 0 {
-                Text("\(state.focusedToday.describe()) today")
-                    .font(.caption)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .help(state.focusedToday.summary())
-            }
 
             Menu {
                 Button("Settings\u{2026}  \u{2318},", action: openSettings)
@@ -437,8 +505,37 @@ private struct PanelFooter: View {
     }
 
     private func openSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        openWindow(id: "settings")
+        openWindow.settings()
+    }
+
+    /// Pause and play without opening the station menu. A stream has no
+    /// pause of its own, so this stops it, and play reconnects to whatever
+    /// played last.
+    private var playPauseButton: some View {
+        let playing = state.musicPlaying
+        let resume = Defaults.lastStation ?? Defaults.pomodoroStation ?? Station.presets[0]
+        return Button {
+            if playing {
+                Actions.stopMusic()
+            } else {
+                Actions.playMusic(resume)
+            }
+        } label: {
+            Image(systemName: playing ? "pause.fill" : "play.fill")
+                .font(.system(size: 9, weight: .bold))
+                .frame(width: 20, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 4)
+        .help(playing ? pauseHelp : "Play \(resume.displayName)")
+    }
+
+    /// A file restarts from the top on play rather than resuming, so its
+    /// button says what it really does.
+    private var pauseHelp: String {
+        if case .file = state.musicNowPlaying { return "Stop music" }
+        return "Pause music"
     }
 
     private var musicTitle: String {

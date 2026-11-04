@@ -81,4 +81,36 @@ import Foundation
         #expect(throws: TodoList.Failure.unreadable(list.url)) { try list.add("b", now: noon) }
         #expect(try String(contentsOf: list.url, encoding: .utf8) == "not json")
     }
+
+    // MARK: Rolling on
+
+    private func item(_ title: String, done: Bool = false) -> TodoList.Item {
+        TodoList.Item(id: UUID(), title: title, createdAt: 0, doneAt: done ? 1 : nil)
+    }
+
+    @Test func anOpenTaskKeepsItsGoal() {
+        #expect(TodoList.nextGoal(after: "spec", in: [item("spec"), item("review")]) == "spec")
+    }
+
+    @Test func aFreehandGoalKeepsGoing() {
+        #expect(TodoList.nextGoal(after: "inbox zero", in: [item("spec", done: true)]) == "inbox zero")
+        #expect(TodoList.nextGoal(after: "inbox zero", in: []) == "inbox zero")
+    }
+
+    @Test func aTickedTaskHandsOverToTheFirstOpenOne() {
+        let items = [item("spec", done: true), item("review"), item("emails")]
+        #expect(TodoList.nextGoal(after: "spec", in: items) == "review")
+    }
+
+    @Test func aTickedLastTaskEndsTheRun() {
+        let items = [item("spec", done: true), item("review", done: true)]
+        #expect(TodoList.nextGoal(after: "spec", in: items) == nil)
+    }
+
+    /// Two tasks with the same title: the session could be on either, so it
+    /// only moves on once neither is open.
+    @Test func aDuplicateTitleStillOpenKeepsTheGoal() {
+        let items = [item("spec", done: true), item("spec")]
+        #expect(TodoList.nextGoal(after: "spec", in: items) == "spec")
+    }
 }
