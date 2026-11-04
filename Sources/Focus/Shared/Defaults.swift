@@ -136,4 +136,17 @@ enum Defaults {
         get { Station(preset: store.string(forKey: pomodoroStationKey) ?? "") }
         set { store.set(newValue?.presetName ?? "", forKey: pomodoroStationKey) }
     }
+
+    private static let lastStationKey = "lastStation"
+
+    /// The last thing that played, so the panel's play button can resume it
+    /// after a pause without opening the station menu. Stored as its label (a
+    /// preset name, stream URL or file path), like the music PID file.
+    static var lastStation: Station? {
+        get { store.string(forKey: lastStationKey).flatMap(Station.init(label:)) }
+        set { store.set(newValue?.label, forKey: lastStationKey) }
+    }
+
+    /// The Settings tab to show, so the panel can open Settings on Stats.
+    static let settingsTabKey = "settingsTab"
 }

@@ -1,26 +1,59 @@
+import AppKit
 import SwiftUI
 import KeyboardShortcuts
 
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case general, blocking, shortcuts, stats, about
+
+    var id: Self { self }
+    var title: String { rawValue.capitalized }
+}
+
+extension OpenWindowAction {
+    /// Bring Settings forward, on `tab` when given, else where it was left.
+    /// Works on an already open window too: the tab is read from defaults.
+    @MainActor func settings(_ tab: SettingsTab? = nil) {
+        if let tab { Defaults.store.set(tab.rawValue, forKey: Defaults.settingsTabKey) }
+        NSApp.activate(ignoringOtherApps: true)
+        self(id: "settings")
+    }
+}
+
 struct SettingsContent: View {
+    @AppStorage(Defaults.settingsTabKey, store: Defaults.store) private var tab: SettingsTab = .general
+
     var body: some View {
-        TabView {
-            GeneralTab()
-                .tabItem { Label("General", systemImage: "gear") }
+        // A segmented control over the content rather than a TabView. In a
+        // plain Window, TabView draws its box flush under the title bar with
+        // the tabs straddling the seam, which read as a layout bug. The
+        // Settings scene would give real toolbar tabs, but it doesn't reliably
+        // show for a menu bar app (see FocusApp).
+        VStack(spacing: 0) {
+            Picker("Section", selection: $tab) {
+                ForEach(SettingsTab.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .padding(.top, 4)
+            .padding(.bottom, 10)
 
-            BlockingTab()
-                .tabItem { Label("Blocking", systemImage: "nosign") }
+            Divider()
 
-            ShortcutsTab()
-                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
-
-            StatsTab()
-                .tabItem { Label("Stats", systemImage: "chart.bar") }
+            Group {
+                switch tab {
+                case .general: GeneralTab()
+                case .blocking: BlockingTab()
+                case .shortcuts: ShortcutsTab()
+                case .stats: StatsTab()
+                case .about: AboutTab()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        // Sized to fit the General tab, the tallest. It used to also carry the
-        // block permission and DNS settings and needed 864pt; those now live on
-        // the Blocking tab, next to the list they apply to. Each Form still
-        // scrolls on its own at large accessibility text sizes.
-        .frame(width: 500, height: 640)
+        // Sized to fit the General tab, the tallest, under the section picker.
+        // Each Form still scrolls on its own at large accessibility text sizes.
+        .frame(width: 500, height: 650)
     }
 }
 
@@ -32,8 +65,12 @@ private struct GeneralTab: View {
     var body: some View {
         Form {
             Section("Session") {
-                Stepper("Work: \(workMinutes) min", value: workBinding, in: 1...180)
-                Stepper("Break: \(breakMinutes) min", value: breakBinding, in: 1...60)
+                LabeledContent("Work") {
+                    IncrementControl(value: workBinding, range: 1...180, step: 5, unit: "min")
+                }
+                LabeledContent("Break") {
+                    IncrementControl(value: breakBinding, range: 1...60, unit: "min")
+                }
                 Toggle("Block websites while working", isOn: blockDuringPomodoroBinding)
                 Picker("Start music with pomodoro", selection: pomodoroStationBinding) {
                     Text("None").tag(Station?.none)
@@ -47,13 +84,17 @@ private struct GeneralTab: View {
 
             Section {
                 Toggle("Keep cycling sessions until I stop", isOn: autoStartBinding)
-                Stepper(
-                    "Long break after every \(sessionsBeforeLongBreak) session\(sessionsBeforeLongBreak == 1 ? "" : "s")",
-                    value: sessionsBinding, in: 1...12
-                )
+                LabeledContent("Long break after every") {
+                    IncrementControl(
+                        value: sessionsBinding, range: 1...12,
+                        unit: sessionsBeforeLongBreak == 1 ? "session" : "sessions"
+                    )
+                }
                 .disabled(!autoStart)
-                Stepper("Long break: \(longBreakMinutes) min", value: longBreakBinding, in: 1...60)
-                    .disabled(!autoStart)
+                LabeledContent("Long break") {
+                    IncrementControl(value: longBreakBinding, range: 1...60, step: 5, unit: "min")
+                }
+                .disabled(!autoStart)
             } header: {
                 Text("Cycling")
             } footer: {
@@ -342,5 +383,126 @@ private struct BlockingTab: View {
         } catch {
             self.error = "Not saved: " + error.localizedDescription
         }
+    }
+}
+
+/// Wide minus and plus targets either side of the value, in place of a
+/// stepper, whose arrows were too small to hit reliably. A click moves to the
+/// next multiple of `step`, so a 23 set from the CLI goes to 25 or 20 rather
+/// than 28 or 18. Holding a button repeats, on macOS 14 and later.
+struct IncrementControl: View {
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    var step = 1
+    let unit: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            button("minus", by: -step, help: "Less")
+            Text("\(value) \(unit)")
+                .monospacedDigit()
+                // LabeledContent dims its content as secondary; the value is
+                // the point of the row.
+                .foregroundStyle(.primary)
+                .frame(minWidth: 84)
+                .overlay(alignment: .leading) { Divider() }
+                .overlay(alignment: .trailing) { Divider() }
+            button("plus", by: step, help: "More")
+        }
+        .frame(height: 24)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlColor)))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
+        .fixedSize()
+        // One adjustable element for VoiceOver, as the Stepper was, rather than
+        // two bare buttons and a stray value.
+        .accessibilityElement(children: .ignore)
+        .accessibilityValue("\(value) \(unit)")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: value = Self.stepped(value, by: step, in: range)
+            case .decrement: value = Self.stepped(value, by: -step, in: range)
+            @unknown default: break
+            }
+        }
+    }
+
+    private func button(_ symbol: String, by delta: Int, help: String) -> some View {
+        Button {
+            value = Self.stepped(value, by: delta, in: range)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 30, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(Self.stepped(value, by: delta, in: range) == value)
+        .repeatsWhileHeld()
+        .help(help)
+    }
+
+    /// The value one click of `delta` away: the next multiple of it in that
+    /// direction, clamped to `range`. A value already past the end it moves
+    /// toward stays put, so "More" never lowers one set out of range.
+    static func stepped(_ value: Int, by delta: Int, in range: ClosedRange<Int>) -> Int {
+        if delta > 0, value >= range.upperBound { return value }
+        if delta < 0, value <= range.lowerBound { return value }
+        let size = max(abs(delta), 1)
+        let next = delta > 0 ? (value / size + 1) * size : ((value - 1) / size) * size
+        return min(max(next, range.lowerBound), range.upperBound)
+    }
+}
+
+private extension View {
+    @ViewBuilder func repeatsWhileHeld() -> some View {
+        if #available(macOS 14.0, *) {
+            buttonRepeatBehavior(.enabled)
+        } else {
+            self
+        }
+    }
+}
+
+/// What this build is and where it comes from.
+private struct AboutTab: View {
+    private static let repo = URL(string: "https://github.com/nchourrout/focus")!
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 96, height: 96)
+            Text("Focus").font(.title.weight(.semibold))
+            Text("Version \(focusVersion())")
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            Text("Block distracting sites, play focus music and run pomodoros, from the menu bar or the terminal.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 340)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+
+            HStack(spacing: 18) {
+                Link("Source code", destination: Self.repo)
+                Link("Releases", destination: Self.repo.appendingPathComponent("releases"))
+                Link("Report an issue", destination: Self.repo.appendingPathComponent("issues"))
+            }
+            .padding(.top, 12)
+
+            Spacer()
+
+            VStack(spacing: 4) {
+                Text("Music streams courtesy of [SomaFM](https://somafm.com), listener-supported radio.")
+                if let copyright = Bundle.main.infoDictionary?["NSHumanReadableCopyright"] as? String {
+                    Text("\(copyright) MIT License.")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.top, 48)
+        .padding([.horizontal, .bottom], 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
