@@ -295,9 +295,12 @@ final class AppState: ObservableObject {
         }
         // End of session: break → done (or daemon cleared the file).
         if prevPhase == .break, currPhase == .done {
+            // A run that ended because its last task was ticked off has
+            // nothing to offer another session on.
+            let allDone = prevPomo.map { TodoList.nextGoal(after: $0.goal, in: todos) == nil } ?? false
             LocalNotifications.post(
                 title: "Break over",
-                body: "Ready for another session?",
+                body: allDone ? "Every task for today is done." : "Ready for another session?",
                 sound: nil
             )
             Sounds.play(.sessionEnd)

@@ -12,9 +12,11 @@ protocol SessionEffects {
     var now: TimeInterval { get }
     /// Read at every phase boundary, never cached — see `PomodoroCadence`.
     var cadence: PomodoroCadence { get }
-    /// Today's tasks, read at each break's end to see whether the one being
-    /// worked on was ticked off. See `TodoList.nextGoal`.
-    var todayTasks: [TodoList.Item] { get }
+    /// The task list as of the day `start` falls on, read at each break's end
+    /// to see whether the one being worked on was ticked off. Pinned to the
+    /// session's start, not now, so a task ticked before midnight is still
+    /// there when the break ends after it. See `TodoList.nextGoal`.
+    func todayTasks(asOf start: TimeInterval) -> [TodoList.Item]
     func sleep(until deadline: TimeInterval)
     func applyBlock()
     func removeBlock()
@@ -163,7 +165,7 @@ struct SessionRunner {
             // phantom next session.
             guard let prev = session.current else { break }
 
-            guard let goal = TodoList.nextGoal(after: prev.goal, in: effects.todayTasks) else { break }
+            guard let goal = TodoList.nextGoal(after: prev.goal, in: effects.todayTasks(asOf: prev.startedAt)) else { break }
 
             let next = session.nextSession(
                 after: prev,
@@ -194,7 +196,9 @@ struct SessionRunner {
 struct LiveSessionEffects: SessionEffects {
     var now: TimeInterval { Date().timeIntervalSince1970 }
     var cadence: PomodoroCadence { .fromSettings }
-    var todayTasks: [TodoList.Item] { TodoList.default.items() }
+    func todayTasks(asOf start: TimeInterval) -> [TodoList.Item] {
+        TodoList.default.items(now: Date(timeIntervalSince1970: start))
+    }
 
     /// Sleep to an absolute wall-clock deadline.
     ///

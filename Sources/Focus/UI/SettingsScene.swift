@@ -13,7 +13,7 @@ extension OpenWindowAction {
     /// Bring Settings forward, on `tab` when given, else where it was left.
     /// Works on an already open window too: the tab is read from defaults.
     @MainActor func settings(_ tab: SettingsTab? = nil) {
-        if let tab { Defaults.store.set(tab.rawValue, forKey: Defaults.settingsTabKey) }
+        if let tab { Defaults.settingsTab = tab.rawValue }
         NSApp.activate(ignoringOtherApps: true)
         self(id: "settings")
     }
@@ -65,12 +65,8 @@ private struct GeneralTab: View {
     var body: some View {
         Form {
             Section("Session") {
-                LabeledContent("Work") {
-                    IncrementControl(value: workBinding, range: 1...180, step: 5, unit: "min")
-                }
-                LabeledContent("Break") {
-                    IncrementControl(value: breakBinding, range: 1...60, unit: "min")
-                }
+                IncrementControl("Work", value: workBinding, range: 1...180, step: 5, unit: "min")
+                IncrementControl("Break", value: breakBinding, range: 1...60, unit: "min")
                 Toggle("Block websites while working", isOn: blockDuringPomodoroBinding)
                 Picker("Start music with pomodoro", selection: pomodoroStationBinding) {
                     Text("None").tag(Station?.none)
@@ -84,17 +80,13 @@ private struct GeneralTab: View {
 
             Section {
                 Toggle("Keep cycling sessions until I stop", isOn: autoStartBinding)
-                LabeledContent("Long break after every") {
-                    IncrementControl(
-                        value: sessionsBinding, range: 1...12,
-                        unit: sessionsBeforeLongBreak == 1 ? "session" : "sessions"
-                    )
-                }
+                IncrementControl(
+                    "Long break after every", value: sessionsBinding, range: 1...12,
+                    unit: sessionsBeforeLongBreak == 1 ? "session" : "sessions"
+                )
                 .disabled(!autoStart)
-                LabeledContent("Long break") {
-                    IncrementControl(value: longBreakBinding, range: 1...60, step: 5, unit: "min")
-                }
-                .disabled(!autoStart)
+                IncrementControl("Long break", value: longBreakBinding, range: 1...60, step: 5, unit: "min")
+                    .disabled(!autoStart)
             } header: {
                 Text("Cycling")
             } footer: {
@@ -391,12 +383,25 @@ private struct BlockingTab: View {
 /// next multiple of `step`, so a 23 set from the CLI goes to 25 or 20 rather
 /// than 28 or 18. Holding a button repeats, on macOS 14 and later.
 struct IncrementControl: View {
+    let title: String
     @Binding var value: Int
     let range: ClosedRange<Int>
     var step = 1
     let unit: String
 
+    init(_ title: String, value: Binding<Int>, range: ClosedRange<Int>, step: Int = 1, unit: String) {
+        self.title = title
+        _value = value
+        self.range = range
+        self.step = step
+        self.unit = unit
+    }
+
     var body: some View {
+        LabeledContent(title) { control }
+    }
+
+    private var control: some View {
         HStack(spacing: 0) {
             button("minus", by: -step, help: "Less")
             Text("\(value) \(unit)")
@@ -416,6 +421,7 @@ struct IncrementControl: View {
         // One adjustable element for VoiceOver, as the Stepper was, rather than
         // two bare buttons and a stray value.
         .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
         .accessibilityValue("\(value) \(unit)")
         .accessibilityAdjustableAction { direction in
             switch direction {

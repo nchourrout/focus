@@ -147,6 +147,13 @@ enum Defaults {
         set { store.set(newValue?.label, forKey: lastStationKey) }
     }
 
-    /// The Settings tab to show, so the panel can open Settings on Stats.
+    /// The Settings tab to show, as its raw name, so the panel can open
+    /// Settings on Stats. The key stays visible for the `@AppStorage` that
+    /// reads it back; writes go through `settingsTab`.
     static let settingsTabKey = "settingsTab"
+
+    static var settingsTab: String? {
+        get { store.string(forKey: settingsTabKey) }
+        set { store.set(newValue, forKey: settingsTabKey) }
+    }
 }

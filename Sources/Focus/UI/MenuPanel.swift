@@ -114,6 +114,9 @@ private struct SessionHeader: View {
         // Built outside the tick: neither the task list nor the setting it
         // reads changes from one second to the next.
         let goal = goalLine(p)
+        // With every task ticked there is no session to skip to: skip-break
+        // would end the run, which Stop already says plainly.
+        let canSkipBreak = TodoList.nextGoal(after: p.goal, in: state.todos) != nil
         // The panel only exists on screen while open, so ticking here costs
         // nothing the rest of the day.
         return TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -132,7 +135,7 @@ private struct SessionHeader: View {
                 ProgressView(value: progress(p, phase, timeLeft))
                     .tint(phase == .break ? .green : .accentColor)
                 HStack(spacing: 8) {
-                    if phase == .break {
+                    if phase == .break, canSkipBreak {
                         Button("Skip break") { Actions.skipBreak() }
                     }
                     Button("Pause") { Actions.pausePomodoro() }
@@ -175,13 +178,11 @@ private struct SessionHeader: View {
             }
             .font(.headline)
             .foregroundStyle(.secondary)
-            // "Up next" only when cycling, the one case a next session comes.
-            if let next, Defaults.autoStartNextSession {
-                Text("Up next: \(next)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            } else if next == nil {
-                Text("All done. Focus stops after this break.")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
+            // Named whether or not cycling is on: Skip break starts on it too.
+            Text(next.map { "Up next: \($0)" } ?? "All done. Focus stops after this break.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
@@ -527,7 +528,14 @@ private struct PanelFooter: View {
         }
         .buttonStyle(.plain)
         .padding(.trailing, 4)
-        .help(playing ? "Pause music" : "Play \(resume.displayName)")
+        .help(playing ? pauseHelp : "Play \(resume.displayName)")
+    }
+
+    /// A file restarts from the top on play rather than resuming, so its
+    /// button says what it really does.
+    private var pauseHelp: String {
+        if case .file = state.musicNowPlaying { return "Stop music" }
+        return "Pause music"
     }
 
     private var musicTitle: String {

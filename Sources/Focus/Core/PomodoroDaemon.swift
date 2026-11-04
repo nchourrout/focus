@@ -145,7 +145,8 @@ enum PomodoroDaemon {
         }
         // Same roll-on as a break that runs out: a ticked-off task hands over
         // to the next open one, and with none left there is nothing to skip to.
-        guard let goal = TodoList.nextGoal(after: current.goal, in: TodoList.default.items()) else {
+        let tasks = LiveSessionEffects().todayTasks(asOf: current.startedAt)
+        guard let goal = TodoList.nextGoal(after: current.goal, in: tasks) else {
             print("focus: every task is done, so no session follows the break")
             stopUnlocked(teardownWait: 15)
             return
