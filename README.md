@@ -16,6 +16,12 @@ A macOS menu bar app + CLI to get in the zone.
 - **Global hotkeys** and a **launch at login** toggle, both configured in Settings
 - One Swift binary is both the menu bar app (no args) and the CLI (a subcommand)
 
+<p align="center">
+  <img src="docs/screenshots/menu-panel.png" alt="Menu bar panel during a work session, with today's tasks" width="250" />
+  <img src="docs/screenshots/settings-stats.png" alt="Stats: focused time per day over the last 7 days" width="270" />
+  <img src="docs/screenshots/settings-general.png" alt="General settings: session length, blocking, music and cycling" width="270" />
+</p>
+
 ## Download
 
 Pre-built `.app` zips are attached to each [GitHub Release](https://github.com/nchourrout/focus/releases). Unzip, drag `Focus.app` to `/Applications`, then:
