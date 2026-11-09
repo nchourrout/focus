@@ -85,6 +85,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>LSMinimumSystemVersion</key>      <string>13.0</string>
     <key>LSUIElement</key>                 <true/>
     <key>NSPrincipalClass</key>            <string>NSApplication</string>
+    <key>NSAppleEventsUsageDescription</key><string>Focus reloads browser tabs that are open on a blocked site when the block turns on, so they stop working right away.</string>
     <key>NSHumanReadableCopyright</key>    <string>Copyright © 2026 Nicolas Chourrout.</string>
 </dict>
 </plist>

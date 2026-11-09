@@ -103,6 +103,7 @@ enum Actions {
                     )
                     return
                 }
+                if active { BrowserTabs.reloadBlockedTabs() }
                 Task { @MainActor in
                     LocalNotifications.post(
                         title: active ? "Websites blocked" : "Websites unblocked",
@@ -123,7 +124,10 @@ enum Actions {
     /// section in place.
     static func reapplyBlock() {
         guard SiteBlock.default.isActive else { return }
-        spawnSudo(["block"] + Defaults.dohSuppressionFlags)
+        spawnSudo(["block"] + Defaults.dohSuppressionFlags) {
+            // Turning DoH blocking on can cut off tabs that were bypassing it.
+            BrowserTabs.reloadBlockedTabs()
+        }
     }
 
     // MARK: Music
@@ -204,11 +208,14 @@ enum Actions {
     /// surface an alert, so the user understands why the action appeared to
     /// do nothing. Shared with `AppState`'s dead-daemon recovery, which unblocks
     /// on the user's behalf after cleaning up a crashed session.
-    static func spawnSudo(_ args: [String]) {
+    static func spawnSudo(_ args: [String], onSuccess: (@Sendable () -> Void)? = nil) {
         do {
             let handle = try Shell.spawn(Shell.Command(Paths.sudoTarget, args, sudo: true))
             handle.onExit { status, _ in
-                guard status != 0 else { return }
+                guard status != 0 else {
+                    onSuccess?()
+                    return
+                }
                 reportPrivilegedFailure(args.first ?? "?")
             }
         } catch {
