@@ -46,7 +46,7 @@ enum BrowserTabs {
 
     /// JXA: walk every tab of each running browser and reload the ones whose
     /// host is blocked. `running()` doesn't launch a browser that is closed.
-    /// The one-second delay gives the browser time to notice the new hosts
+    /// The two-second delay gives the browser time to notice the new hosts
     /// file before the reload asks it to resolve again. Safari has no reload
     /// command, so setting a tab's URL to itself stands in for one. Every
     /// browser is wrapped on its own, so one that refuses Apple Events or
@@ -63,7 +63,7 @@ enum BrowserTabs {
             "com.google.Chrome", "com.google.Chrome.canary", "com.brave.Browser",
             "com.microsoft.edgemac", "com.vivaldi.Vivaldi", "company.thebrowser.Browser",
         ];
-        delay(1);
+        delay(2);
         let reloaded = 0;
         for (const id of chromium.concat(safari)) {
             try {
