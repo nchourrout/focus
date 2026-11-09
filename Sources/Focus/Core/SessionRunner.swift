@@ -231,7 +231,10 @@ struct LiveSessionEffects: SessionEffects {
             sudo: true,
             captureStderr: true
         ))
-        guard result.status != 0 else { return }
+        guard result.status != 0 else {
+            BrowserTabs.reloadBlockedTabs()
+            return
+        }
         Log.daemon.error(
             """
             sudo -n block failed (status \(result.status, privacy: .public)); \

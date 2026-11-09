@@ -263,7 +263,9 @@ private struct BlockingTab: View {
                 TextEditor(text: $content)
                     .font(.system(.body, design: .monospaced))
                     .scrollContentBackground(.hidden)
-                    .frame(minHeight: 220)
+                    // Fixed, so a long list scrolls inside the editor instead
+                    // of growing the Form past the window.
+                    .frame(height: 300)
             } header: {
                 Text("Sites")
             } footer: {
