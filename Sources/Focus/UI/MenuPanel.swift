@@ -366,6 +366,13 @@ private struct TodoRow: View {
     /// Reopening a done task counts against the cap, same as adding one.
     let canReopen: Bool
     @ViewState private var hovering = false
+    /// The title being typed while the row is in edit mode, nil otherwise.
+    @ViewState private var draft: String?
+    @FocusState private var fieldFocused: Bool
+
+    /// The session matches its task by title, so renaming the one it is on
+    /// would orphan the NOW badge and the roll-on to the next task.
+    private var canEdit: Bool { !isCurrent }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -381,11 +388,24 @@ private struct TodoRow: View {
             .disabled(item.isDone && !canReopen)
             .help(item.isDone ? "Mark not done" : "Mark done")
 
-            Text(item.title)
-                .strikethrough(item.isDone)
-                .foregroundStyle(item.isDone ? .secondary : .primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if let draft {
+                TextField("", text: Binding(get: { draft }, set: { self.draft = $0 }))
+                    .textFieldStyle(.plain)
+                    .focused($fieldFocused)
+                    .onSubmit(commitEdit)
+                    .onExitCommand { self.draft = nil }
+                    .onChange(of: fieldFocused) { focused in
+                        if !focused { commitEdit() }
+                    }
+            } else {
+                Text(item.title)
+                    .strikethrough(item.isDone)
+                    .foregroundStyle(item.isDone ? .secondary : .primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .onTapGesture(count: 2) { if canEdit { beginEdit() } }
+                    .help(canEdit ? "Double-click to edit" : "")
+            }
 
             Spacer(minLength: 4)
 
@@ -397,7 +417,10 @@ private struct TodoRow: View {
                     .background(Capsule().fill(Color.accentColor.opacity(0.18)))
                     .foregroundStyle(Color.accentColor)
             }
-            if hovering {
+            if hovering, draft == nil {
+                if canEdit {
+                    iconButton("pencil", help: "Edit") { beginEdit() }
+                }
                 if canStart, !item.isDone {
                     iconButton("play.fill", help: "Start a pomodoro on this") {
                         Actions.startPomodoro(goal: item.title)
@@ -417,6 +440,21 @@ private struct TodoRow: View {
         .padding(.horizontal, -6)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+
+    private func beginEdit() {
+        draft = item.title
+        fieldFocused = true
+    }
+
+    /// Enter or clicking away saves; Escape cancels. An emptied or unchanged
+    /// title just leaves edit mode.
+    private func commitEdit() {
+        guard let title = draft?.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        draft = nil
+        if !title.isEmpty, title != item.title {
+            Actions.renameTodo(item.id, to: title)
+        }
     }
 
     private func iconButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {

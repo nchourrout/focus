@@ -87,6 +87,7 @@ focus pomodoro stop
 focus todo                                        # today's tasks; --json
 focus todo add write the spec                     # at most 3 open
 focus todo done 1                                 # undo 1 reopens it
+focus todo edit 1 write the full spec
 focus todo rm 1
 
 focus stats                                       # last 7 days; --days N, --json

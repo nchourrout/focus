@@ -177,6 +177,10 @@ enum Actions {
         todo("setDone") { try TodoList.default.setDone(.id(id), done) }
     }
 
+    static func renameTodo(_ id: UUID, to title: String) {
+        todo("rename") { try TodoList.default.rename(.id(id), to: title) }
+    }
+
     static func removeTodo(_ id: UUID) {
         todo("remove") { try TodoList.default.remove(.id(id)) }
     }

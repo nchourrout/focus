@@ -53,6 +53,24 @@ import Foundation
         #expect(try !list.setDone(.number(1), false, now: noon).isDone)
     }
 
+    @Test func renameTrimsAndKeepsDoneState() throws {
+        let list = makeList()
+        let a = try list.add("a", now: noon)
+        try list.setDone(.number(1), true, now: noon)
+        let renamed = try list.rename(.id(a.id), to: "  write spec ", now: noon)
+        #expect(renamed.title == "write spec")
+        #expect(renamed.isDone)
+        #expect(list.items(now: noon).map(\.title) == ["write spec"])
+    }
+
+    @Test func renameRefusesEmptyTitlesAndMissingTasks() throws {
+        let list = makeList()
+        try list.add("a", now: noon)
+        #expect(throws: TodoList.Failure.emptyTitle) { try list.rename(.number(1), to: "  ", now: noon) }
+        #expect(throws: TodoList.Failure.noSuchItem(.number(2))) { try list.rename(.number(2), to: "b", now: noon) }
+        #expect(list.items(now: noon).map(\.title) == ["a"])
+    }
+
     @Test func refsResolveByNumberOrId() throws {
         let list = makeList()
         try list.add("a", now: noon)

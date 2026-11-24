@@ -6,7 +6,7 @@ struct Todo: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "todo",
         abstract: "keep a few tasks for today",
-        subcommands: [List.self, Add.self, Done.self, Undo.self, Remove.self],
+        subcommands: [List.self, Add.self, Done.self, Undo.self, Edit.self, Remove.self],
         defaultSubcommand: List.self
     )
 }
@@ -88,6 +88,24 @@ extension Todo {
         func run() throws {
             let item = try wrap { try TodoList.default.setDone(.number(number), false) }
             print("focus: reopened: \(item.title)")
+        }
+    }
+
+    struct Edit: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "edit",
+            abstract: "change a task's title"
+        )
+
+        @Argument(help: "Task number, as `focus todo` lists it")
+        var number: Int
+
+        @Argument(parsing: .remaining, help: "The new title")
+        var words: [String] = []
+
+        func run() throws {
+            let item = try wrap { try TodoList.default.rename(.number(number), to: words.joined(separator: " ")) }
+            print("focus: renamed to \(item.title)")
         }
     }
 

@@ -99,6 +99,19 @@ struct TodoList {
         }
     }
 
+    /// Change a task's title, open or done. Same trimming and empty check as
+    /// `add`.
+    @discardableResult
+    func rename(_ ref: Ref, to title: String, now: Date = Date()) throws -> Item {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw Failure.emptyTitle }
+        return try mutate(now: now) { items in
+            let i = try Self.index(of: ref, in: items)
+            items[i].title = trimmed
+            return items[i]
+        }
+    }
+
     @discardableResult
     func remove(_ ref: Ref, now: Date = Date()) throws -> Item {
         try mutate(now: now) { items in
